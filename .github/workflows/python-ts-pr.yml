@@ -1,0 +1,110 @@
+# Reusable PR workflow for hallo theo apps with a Python backend and/or a
+# TypeScript (React + Vite) frontend.
+#
+# Each app in the hallo-theo org has a thin caller workflow that does:
+#
+#   jobs:
+#     ci:
+#       uses: hallo-theo/.github/.github/workflows/python-ts-pr.yml@main
+#       with:
+#         api-path: api
+#         api-package: object-details-api
+#         app-path: app/object_details.raw_app
+#
+# Both `api-path` and `app-path` default to empty — leaving one unset
+# skips that side of the build. So pure-Windmill apps with no backend
+# can still use this workflow by only setting `app-path`.
+
+name: PR (Python + TS, reusable)
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to install"
+        type: string
+        default: "3.12"
+      node-version:
+        description: "Node.js version to install"
+        type: string
+        default: "20"
+      api-path:
+        description: "Path to the Python backend (e.g. 'api'). Empty = skip backend jobs."
+        type: string
+        default: ""
+      api-package:
+        description: "uv workspace package name for tests (used in `uv run --package <name>`). Optional."
+        type: string
+        default: ""
+      app-path:
+        description: "Path to the frontend (e.g. 'app/object_details.raw_app'). Empty = skip frontend jobs."
+        type: string
+        default: ""
+
+jobs:
+  # --- Python backend -------------------------------------------------------
+  python:
+    if: inputs.api-path != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      - name: Ruff (lint)
+        run: uv run ruff check ${{ inputs.api-path }}/src
+
+      - name: Ruff (format check)
+        run: uv run ruff format --check ${{ inputs.api-path }}/src
+
+      - name: Pyright (typecheck)
+        run: uv run pyright ${{ inputs.api-path }}/src
+
+      - name: Pytest
+        # FRONTEND_SERVICE_SECRET is required by the auth middleware at
+        # import time, but the value doesn't matter — tests that need
+        # real auth set it themselves via conftest.
+        env:
+          FRONTEND_SERVICE_SECRET: ci-no-auth-needed
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.api-package }}" ]; then
+            uv run --package "${{ inputs.api-package }}" pytest "${{ inputs.api-path }}/tests/" -v
+          else
+            uv run pytest "${{ inputs.api-path }}/tests/" -v
+          fi
+
+  # --- Frontend (Vite + Vitest) ---------------------------------------------
+  frontend:
+    if: inputs.app-path != ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Vitest
+        run: npm run test
