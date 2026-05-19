@@ -1,8 +1,28 @@
 # hallo theo — shared CI/CD definitions
 
 Reusable GitHub Actions workflows and conventions that every hallo theo app
-can call into. Goal: each app's CI/CD is **~10–20 lines of YAML**,
-delegating to the workflows defined here.
+can call into. Goal: each app's CI/CD is **~10–20 lines of YAML**, delegating
+to the workflows defined here.
+
+## TL;DR — starting a brand-new hallo theo app
+
+Two paths, pick whichever you prefer. **Both produce the same end state.**
+
+| | Skill path (Claude Code) | Template repo path |
+|---|---|---|
+| **Trigger** | `/new-app` in Claude Code | `gh repo create --template hallo-theo/template-fastapi-windmill-app` then `bash scripts/bootstrap.sh` |
+| **Discoverable via GitHub UI** | ❌ | ✅ "Use this template" button |
+| **Requires Claude Code** | ✅ | ❌ |
+| **Auto-runs gcloud + Windmill setup** | ✅ | ❌ — prints commands, you copy-paste |
+| **Auto-bootstraps Cloud Run + Windmill variables + .env.general** | ✅ | ❌ — same prints |
+| **Time** | ~5 min | ~10–15 min |
+
+- **Skill path:** see [`hallotheo-claude-plugins` → `builder-tools` → `new-app`](https://github.com/hallo-theo/hallotheo-claude-plugins/tree/main/plugins/builder-tools/skills/new-app)
+- **Template path:** see [`hallo-theo/template-fastapi-windmill-app`](https://github.com/hallo-theo/template-fastapi-windmill-app)
+
+Both wire up the workflow callers documented below. The rest of this README
+covers what those workflows actually do, plus the one-time setup commands
+(useful for retrofitting an existing repo or troubleshooting).
 
 ## What's here
 
@@ -11,7 +31,11 @@ delegating to the workflows defined here.
 | `.github/workflows/python-ts-pr.yml` | Reusable PR check — Python (uv, ruff, pyright, pytest), TS (npm, tsc, vitest), optional Terraform fmt+validate, optional Docker build sanity. |
 | `.github/workflows/python-ts-deploy.yml` | Reusable deploy — pre-flight re-run of PR gates, Docker build + push to Artifact Registry, Cloud Run deploy, optional `wmill app push`. |
 
-## How to adopt in your app
+## How to adopt manually (retrofit an existing repo)
+
+If you're not bootstrapping from scratch — say, an existing repo that doesn't
+have CI yet, or you want full control over the workflow files — wire it
+manually:
 
 ### Stack family
 
