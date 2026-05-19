@@ -11,6 +11,9 @@
 #   concurrency:
 #     group: deploy-prod-${{ github.ref }}
 #     cancel-in-progress: false   # don't kill an in-flight deploy
+#   permissions:
+#     id-token: write              # required — WIF auth in the called workflow
+#     contents: read
 #   jobs:
 #     deploy:
 #       uses: hallo-theo/.github/.github/workflows/python-ts-deploy.yml@main
