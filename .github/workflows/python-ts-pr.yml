@@ -1,8 +1,16 @@
 # Reusable PR workflow for hallo theo apps with a Python backend and/or a
-# TypeScript (React + Vite) frontend.
+# TypeScript (React + Vite) frontend, plus optional Terraform and a docker
+# build sanity check.
 #
-# Each app in the hallo-theo org has a thin caller workflow that does:
+# Each app's caller workflow looks like:
 #
+#   name: PR
+#   on:
+#     pull_request:
+#       branches: [main]
+#   concurrency:
+#     group: pr-${{ github.event.pull_request.number }}
+#     cancel-in-progress: true
 #   jobs:
 #     ci:
 #       uses: hallo-theo/.github/.github/workflows/python-ts-pr.yml@main
@@ -10,12 +18,14 @@
 #         api-path: api
 #         api-package: object-details-api
 #         app-path: app/object_details.raw_app
+#         terraform-path: terraform                    # optional
+#         dockerfile: api/Dockerfile                   # optional — enables docker build sanity
 #
-# Both `api-path` and `app-path` default to empty — leaving one unset
-# skips that side of the build. So pure-Windmill apps with no backend
-# can still use this workflow by only setting `app-path`.
+# Setting any of api-path / app-path / terraform-path / dockerfile to "" (the
+# default) skips that section. So pure-Windmill apps with no backend just set
+# app-path; pure backends with no frontend just set api-path.
 
-name: PR (Python + TS, reusable)
+name: "PR (Python + TS, reusable)"
 
 on:
   workflow_call:
@@ -40,6 +50,22 @@ on:
         description: "Path to the frontend (e.g. 'app/object_details.raw_app'). Empty = skip frontend jobs."
         type: string
         default: ""
+      terraform-path:
+        description: "Path to terraform sources (e.g. 'terraform'). Empty = skip terraform job."
+        type: string
+        default: ""
+      terraform-version:
+        description: "Terraform version to install"
+        type: string
+        default: "1.7.5"
+      dockerfile:
+        description: "Path to Dockerfile relative to docker-context. Empty = skip docker build sanity job."
+        type: string
+        default: ""
+      docker-context:
+        description: "Docker build context directory"
+        type: string
+        default: "."
 
 jobs:
   # --- Python backend -------------------------------------------------------
@@ -47,10 +73,10 @@ jobs:
     if: inputs.api-path != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install uv (with cache)
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 
@@ -71,9 +97,6 @@ jobs:
         run: uv run pyright ${{ inputs.api-path }}/src
 
       - name: Pytest
-        # FRONTEND_SERVICE_SECRET is required by the auth middleware at
-        # import time, but the value doesn't matter — tests that need
-        # real auth set it themselves via conftest.
         env:
           FRONTEND_SERVICE_SECRET: ci-no-auth-needed
         run: |
@@ -92,19 +115,50 @@ jobs:
       run:
         working-directory: ${{ inputs.app-path }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
 
-      - name: npm ci
-        run: npm ci
-
+      - run: npm ci
       - name: TypeScript check
         run: npx tsc --noEmit
-
       - name: Vitest
         run: npm run test
+
+  # --- Terraform (fmt + validate, no apply) ---------------------------------
+  terraform:
+    if: inputs.terraform-path != ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.terraform-path }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  # --- Docker build sanity (no push, GHA cache only) ------------------------
+  docker:
+    if: inputs.dockerfile != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (cache-only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.docker-context }}
+          file: ${{ inputs.dockerfile }}
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

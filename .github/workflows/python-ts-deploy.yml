@@ -1,0 +1,291 @@
+# Reusable deploy workflow for hallo theo apps with a Python backend on
+# Cloud Run and an optional TypeScript frontend hosted as a Windmill raw_app.
+#
+# Wired from a caller workflow that runs on push to main:
+#
+#   name: Main
+#   on:
+#     push:
+#       branches: [main]
+#     workflow_dispatch:
+#   concurrency:
+#     group: deploy-prod-${{ github.ref }}
+#     cancel-in-progress: false   # don't kill an in-flight deploy
+#   jobs:
+#     deploy:
+#       uses: hallo-theo/.github/.github/workflows/python-ts-deploy.yml@main
+#       with:
+#         gcp-project-id:         project-shepherd-494112
+#         gcp-project-number:     "757287535499"
+#         gcp-region:             europe-west3
+#         wif-provider-name:      object-details
+#         deploy-sa:              object-details-deploy@project-shepherd-494112.iam.gserviceaccount.com
+#         cloud-run-service:      object-details-api
+#         artifact-registry-repo: object-details
+#         image-name:             api
+#         dockerfile:             api/Dockerfile
+#         docker-context:         .
+#         api-path:               api
+#         api-package:            object-details-api
+#         app-path:               app/object_details.raw_app   # optional, enables Windmill push
+#         wmill-workspace:        hallotheo
+#         wmill-app-path:         f/object_details/app
+#         wmill-base-url:         https://wm.hallotheo.de       # adjust to your instance
+#       secrets:
+#         wmill-token: ${{ secrets.WMILL_TOKEN }}
+#
+# WIF is provisioned once per repo in project-shepherd-494112:
+#   - Pool `github-pool` is shared org-wide.
+#   - Each repo gets its own provider (e.g. `object-details`) scoped to
+#     assertion.repository == "hallo-theo/<repo>" and its own deploy SA
+#     (`<repo>-deploy@…`) granted artifactregistry.writer +
+#     iam.serviceAccountUser + run.developer.
+
+name: "Deploy (Python + TS, reusable)"
+
+on:
+  workflow_call:
+    inputs:
+      # --- GCP project ----------------------------------------------------
+      gcp-project-id:
+        type: string
+        required: true
+      gcp-project-number:
+        description: "Numeric project id, used in the WIF principal path."
+        type: string
+        required: true
+      gcp-region:
+        type: string
+        default: "europe-west3"
+
+      # --- WIF + deploy SA ------------------------------------------------
+      wif-provider-name:
+        description: "WIF provider name within github-pool (e.g. 'object-details')."
+        type: string
+        required: true
+      deploy-sa:
+        description: "Deploy SA email (e.g. '<repo>-deploy@<project>.iam.gserviceaccount.com')."
+        type: string
+        required: true
+
+      # --- Backend deploy (Cloud Run) ------------------------------------
+      cloud-run-service:
+        description: "Cloud Run service name to redeploy."
+        type: string
+        required: true
+      artifact-registry-repo:
+        description: "Artifact Registry repo name (the path between region and image-name)."
+        type: string
+        required: true
+      image-name:
+        description: "Image name within the AR repo."
+        type: string
+        default: "api"
+      dockerfile:
+        type: string
+        default: "api/Dockerfile"
+      docker-context:
+        type: string
+        default: "."
+
+      # --- Frontend Windmill push (optional) -----------------------------
+      app-path:
+        description: "Path to the raw_app frontend. Empty = skip Windmill push entirely."
+        type: string
+        default: ""
+      wmill-workspace:
+        description: "Windmill workspace name (the --workspace arg passed to wmill)."
+        type: string
+        default: "hallotheo"
+      wmill-app-path:
+        description: "Path in the Windmill workspace (e.g. 'f/object_details/app'). Required when app-path is set."
+        type: string
+        default: ""
+      wmill-base-url:
+        description: "Base URL of the Windmill instance (e.g. 'https://wm.hallotheo.de'). Required when app-path is set."
+        type: string
+        default: ""
+
+      # --- Pre-flight (belt-and-braces re-run of PR gates) ---------------
+      python-version:
+        type: string
+        default: "3.12"
+      node-version:
+        type: string
+        default: "20"
+      api-path:
+        type: string
+        default: ""
+      api-package:
+        type: string
+        default: ""
+
+    secrets:
+      wmill-token:
+        description: "Windmill workspace token (required when app-path is set)."
+        required: false
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Belt-and-braces: re-run the PR gates on main. Costs ~30s; catches
+  # anything that snuck past PR review via force-push.
+  # ---------------------------------------------------------------------
+  preflight:
+    name: "Pre-flight checks"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        if: inputs.api-path != ''
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        if: inputs.api-path != ''
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: uv sync
+        if: inputs.api-path != ''
+        run: uv sync --frozen
+
+      - name: Ruff (lint)
+        if: inputs.api-path != ''
+        run: uv run ruff check ${{ inputs.api-path }}/src
+
+      - name: Ruff (format check)
+        if: inputs.api-path != ''
+        run: uv run ruff format --check ${{ inputs.api-path }}/src
+
+      - name: Pyright (typecheck)
+        if: inputs.api-path != ''
+        run: uv run pyright ${{ inputs.api-path }}/src
+
+      - name: Pytest
+        if: inputs.api-path != ''
+        env:
+          FRONTEND_SERVICE_SECRET: ci-no-auth-needed
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.api-package }}" ]; then
+            uv run --package "${{ inputs.api-package }}" pytest "${{ inputs.api-path }}/tests/" -v
+          else
+            uv run pytest "${{ inputs.api-path }}/tests/" -v
+          fi
+
+      - uses: actions/setup-node@v5
+        if: inputs.app-path != ''
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+
+      - name: npm ci
+        if: inputs.app-path != ''
+        working-directory: ${{ inputs.app-path }}
+        run: npm ci
+
+      - name: TypeScript check
+        if: inputs.app-path != ''
+        working-directory: ${{ inputs.app-path }}
+        run: npx tsc --noEmit
+
+      - name: Vitest
+        if: inputs.app-path != ''
+        working-directory: ${{ inputs.app-path }}
+        run: npm run test
+
+  # ---------------------------------------------------------------------
+  # Build the Docker image, push to Artifact Registry, deploy to Cloud Run.
+  # ---------------------------------------------------------------------
+  build_and_deploy_api:
+    name: "Build + deploy to Cloud Run"
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      GAR_REGISTRY: "${{ inputs.gcp-region }}-docker.pkg.dev/${{ inputs.gcp-project-id }}/${{ inputs.artifact-registry-repo }}"
+      WORKLOAD_IDENTITY_PROVIDER: "projects/${{ inputs.gcp-project-number }}/locations/global/workloadIdentityPools/github-pool/providers/${{ inputs.wif-provider-name }}"
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ inputs.deploy-sa }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: ">= 470.0.0"
+
+      - run: gcloud auth configure-docker ${{ inputs.gcp-region }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build + push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.docker-context }}
+          file: ${{ inputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.GAR_REGISTRY }}/${{ inputs.image-name }}:${{ github.sha }}
+            ${{ env.GAR_REGISTRY }}/${{ inputs.image-name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ inputs.cloud-run-service }} \
+            --region=${{ inputs.gcp-region }} \
+            --image=${{ env.GAR_REGISTRY }}/${{ inputs.image-name }}:${{ github.sha }} \
+            --project=${{ inputs.gcp-project-id }} \
+            --quiet
+
+  # ---------------------------------------------------------------------
+  # Push the raw_app frontend to Windmill. Skipped when app-path is empty.
+  # Runs after Cloud Run deploy so the frontend never points at a missing
+  # backend version.
+  # ---------------------------------------------------------------------
+  push_windmill_app:
+    name: "Push raw_app to Windmill"
+    if: inputs.app-path != ''
+    needs: build_and_deploy_api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-path }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+
+      - run: npm ci
+
+      - name: Install wmill CLI
+        run: npm install -g windmill-cli
+
+      - name: Configure Windmill workspace
+        env:
+          WMILL_TOKEN: ${{ secrets.wmill-token }}
+        run: |
+          if [ -z "${{ inputs.wmill-base-url }}" ] || [ -z "${{ inputs.wmill-app-path }}" ]; then
+            echo "::error::wmill-base-url and wmill-app-path are required when app-path is set."
+            exit 1
+          fi
+          wmill workspace add ci-workspace ${{ inputs.wmill-workspace }} \
+            ${{ inputs.wmill-base-url }} --token "$WMILL_TOKEN"
+
+      - name: Push raw_app
+        run: |
+          wmill --workspace ci-workspace app push \
+            . ${{ inputs.wmill-app-path }}
