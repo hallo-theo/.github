@@ -60,13 +60,13 @@ concurrency:
   group: deploy-prod-${{ github.ref }}
   cancel-in-progress: false   # never kill an in-flight deploy
 
-# Required: id-token: write enables WIF auth in the called workflow.
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   deploy:
+    # Required at JOB level (not workflow level) for the reusable workflow's
+    # nested jobs to inherit id-token: write for WIF auth.
+    permissions:
+      id-token: write
+      contents: read
     uses: hallo-theo/.github/.github/workflows/python-ts-deploy.yml@main
     with:
       gcp-project-id:         project-shepherd-494112
