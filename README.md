@@ -80,8 +80,9 @@ jobs:
       wmill-workspace:        hallotheo
       wmill-app-path:         f/object_details/app
       wmill-base-url:         https://wm.hallotheo.de
-    secrets:
-      wmill-token: ${{ secrets.WMILL_TOKEN }}
+    # Note: no `secrets:` block. The Windmill CI token lives in GCP Secret
+    # Manager (hallotheo-wmill-token) and is fetched at runtime by the deploy
+    # SA via WIF — see the One-time per-repo setup section below.
 ```
 
 ## One-time per-repo setup
@@ -129,11 +130,42 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/hallo-theo/${REPO}"
 ```
 
-### 2. GitHub secrets
+### 2. Secret Manager binding (shared Windmill token)
+
+The Windmill CI token lives **once** in GCP Secret Manager as
+`hallotheo-wmill-token` (org-shared, created once by an admin). Each new
+deploy SA gets read access to that secret:
 
 ```bash
-# Windmill workspace token, scoped to your repo(s)
-gh secret set WMILL_TOKEN --org hallo-theo --visibility selected --repos <your-repo>
+gcloud secrets add-iam-policy-binding hallotheo-wmill-token \
+  --project=${PROJECT} \
+  --member="serviceAccount:${REPO}-deploy@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+```
+
+The deploy workflow reads it at runtime via the SA's WIF identity — there's
+no per-repo `gh secret set` needed for org-shared tokens.
+
+(The `/new-app` skill in `builder-tools` runs this binding automatically as
+part of WIF setup. It's listed here for manual setup or troubleshooting.)
+
+### 3. One-time org bootstrap (admin only — do once per org)
+
+The shared secret itself needs to exist before any repo can use it. The org
+admin runs this once, never again until token rotation:
+
+```bash
+# Create the Windmill CI token secret. Get the token value from Windmill's UI
+# (Settings → Tokens, label github-actions-ci, scope workspace_owner).
+echo -n "<WMILL_TOKEN_VALUE>" | gcloud secrets create hallotheo-wmill-token \
+  --project=project-shepherd-494112 \
+  --replication-policy=automatic \
+  --data-file=-
+
+# Rotations later: add a new version (workflows read --version=latest).
+echo -n "<NEW_TOKEN_VALUE>" | gcloud secrets versions add hallotheo-wmill-token \
+  --project=project-shepherd-494112 \
+  --data-file=-
 ```
 
 ## Inputs reference

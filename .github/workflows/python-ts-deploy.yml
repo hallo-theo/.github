@@ -31,15 +31,19 @@
 #         wmill-workspace:        hallotheo
 #         wmill-app-path:         f/object_details/app
 #         wmill-base-url:         https://wm.hallotheo.de       # adjust to your instance
-#       secrets:
-#         wmill-token: ${{ secrets.WMILL_TOKEN }}
+#       # Note: no `secrets:` block. Windmill CI token is fetched from GCP
+#       # Secret Manager via the deploy SA at runtime — see below.
 #
-# WIF is provisioned once per repo in project-shepherd-494112:
+# WIF + Secret Manager are provisioned once per repo in project-shepherd-494112:
 #   - Pool `github-pool` is shared org-wide.
 #   - Each repo gets its own provider (e.g. `object-details`) scoped to
 #     assertion.repository == "hallo-theo/<repo>" and its own deploy SA
 #     (`<repo>-deploy@…`) granted artifactregistry.writer +
 #     iam.serviceAccountUser + run.developer.
+#   - The shared `hallotheo-wmill-token` secret in Secret Manager grants
+#     each deploy SA roles/secretmanager.secretAccessor (secret-scoped, not
+#     project-scoped). The Windmill push job authenticates with WIF and
+#     reads the token at runtime — no per-repo GitHub secret to manage.
 
 name: "Deploy (Python + TS, reusable)"
 
@@ -105,6 +109,14 @@ on:
         description: "Base URL of the Windmill instance (e.g. 'https://wm.hallotheo.de'). Required when app-path is set."
         type: string
         default: ""
+      wmill-token-secret:
+        description: >-
+          Name of the GCP Secret Manager secret holding the Windmill CI token.
+          Default: 'hallotheo-wmill-token' (the org-shared one). The repo's
+          deploy SA must have roles/secretmanager.secretAccessor on this
+          secret — the new-app skill grants it as part of WIF setup.
+        type: string
+        default: "hallotheo-wmill-token"
 
       # --- Pre-flight (belt-and-braces re-run of PR gates) ---------------
       python-version:
@@ -120,10 +132,9 @@ on:
         type: string
         default: ""
 
-    secrets:
-      wmill-token:
-        description: "Windmill workspace token (required when app-path is set)."
-        required: false
+    # No `secrets:` block — shared secrets (WMILL_TOKEN) live in GCP Secret
+    # Manager and are fetched at runtime via the deploy SA's WIF identity.
+    # This avoids per-repo `gh secret set` for org-shared tokens.
 
 jobs:
   # ---------------------------------------------------------------------
@@ -257,11 +268,40 @@ jobs:
     if: inputs.app-path != ''
     needs: build_and_deploy_api
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ inputs.app-path }}
+    permissions:
+      id-token: write   # for WIF auth to fetch the Windmill token from Secret Manager
+      contents: read
+    env:
+      WORKLOAD_IDENTITY_PROVIDER: "projects/${{ inputs.gcp-project-number }}/locations/global/workloadIdentityPools/github-pool/providers/${{ inputs.wif-provider-name }}"
     steps:
       - uses: actions/checkout@v5
+
+      # Authenticate to GCP via WIF so we can read the Windmill token from
+      # Secret Manager. The deploy SA must have roles/secretmanager.secretAccessor
+      # on the secret named by `wmill-token-secret` (default: hallotheo-wmill-token).
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ inputs.deploy-sa }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: ">= 470.0.0"
+
+      - name: Fetch Windmill CI token from Secret Manager
+        id: wmill-token
+        run: |
+          set -euo pipefail
+          if [ -z "${{ inputs.wmill-base-url }}" ] || [ -z "${{ inputs.wmill-app-path }}" ]; then
+            echo "::error::wmill-base-url and wmill-app-path are required when app-path is set."
+            exit 1
+          fi
+          token=$(gcloud secrets versions access latest \
+            --secret="${{ inputs.wmill-token-secret }}" \
+            --project="${{ inputs.gcp-project-id }}")
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v5
         with:
@@ -269,23 +309,19 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
 
-      - run: npm ci
+      - name: npm ci
+        working-directory: ${{ inputs.app-path }}
+        run: npm ci
 
       - name: Install wmill CLI
         run: npm install -g windmill-cli
 
-      - name: Configure Windmill workspace
+      - name: Configure Windmill workspace + push raw_app
+        working-directory: ${{ inputs.app-path }}
         env:
-          WMILL_TOKEN: ${{ secrets.wmill-token }}
+          WMILL_TOKEN: ${{ steps.wmill-token.outputs.token }}
         run: |
-          if [ -z "${{ inputs.wmill-base-url }}" ] || [ -z "${{ inputs.wmill-app-path }}" ]; then
-            echo "::error::wmill-base-url and wmill-app-path are required when app-path is set."
-            exit 1
-          fi
           wmill workspace add ci-workspace ${{ inputs.wmill-workspace }} \
             ${{ inputs.wmill-base-url }} --token "$WMILL_TOKEN"
-
-      - name: Push raw_app
-        run: |
           wmill --workspace ci-workspace app push \
             . ${{ inputs.wmill-app-path }}
