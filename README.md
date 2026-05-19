@@ -79,7 +79,7 @@ jobs:
       app-path:               app/object_details.raw_app
       wmill-workspace:        hallotheo
       wmill-app-path:         f/object_details/app
-      wmill-base-url:         https://wm.hallotheo.de
+      wmill-base-url:         https://windmill-server-cfvpf3ocvq-ey.a.run.app
     # Note: no `secrets:` block. The Windmill CI token lives in GCP Secret
     # Manager (hallotheo-wmill-token) and is fetched at runtime by the deploy
     # SA via WIF — see the One-time per-repo setup section below.
@@ -201,7 +201,7 @@ echo -n "<NEW_TOKEN_VALUE>" | gcloud secrets versions add hallotheo-wmill-token 
 | `api-path` / `api-package` / `app-path` / `python-version` / `node-version` | optional | Same shape as `python-ts-pr.yml` — used by the pre-flight rerun. |
 | `wmill-workspace` | (default `hallotheo`) | |
 | `wmill-app-path` | required if `app-path` set | E.g. `f/object_details/app`. |
-| `wmill-base-url` | required if `app-path` set | E.g. `https://wm.hallotheo.de`. |
+| `wmill-base-url` | required if `app-path` set | E.g. `https://windmill-server-cfvpf3ocvq-ey.a.run.app`. |
 | `secrets.wmill-token` | required if `app-path` set | Pass via `secrets: wmill-token: ${{ secrets.WMILL_TOKEN }}`. |
 
 ## Conventions across the org

@@ -30,7 +30,7 @@
 #         app-path:               app/object_details.raw_app   # optional, enables Windmill push
 #         wmill-workspace:        hallotheo
 #         wmill-app-path:         f/object_details/app
-#         wmill-base-url:         https://wm.hallotheo.de       # adjust to your instance
+#         wmill-base-url:         https://windmill-server-cfvpf3ocvq-ey.a.run.app       # adjust to your instance
 #       # Note: no `secrets:` block. Windmill CI token is fetched from GCP
 #       # Secret Manager via the deploy SA at runtime — see below.
 #
@@ -106,7 +106,7 @@ on:
         type: string
         default: ""
       wmill-base-url:
-        description: "Base URL of the Windmill instance (e.g. 'https://wm.hallotheo.de'). Required when app-path is set."
+        description: "Base URL of the Windmill instance (e.g. 'https://windmill-server-cfvpf3ocvq-ey.a.run.app'). Required when app-path is set."
         type: string
         default: ""
       wmill-token-secret:
