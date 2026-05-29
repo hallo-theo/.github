@@ -123,6 +123,12 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
 
+      # Upgrade npm before `npm ci`. Node 20 LTS ships with npm 10.8.2, which
+      # has a known bug (npm/cli#4828) where `npm ci` errors on optional
+      # platform-specific deps that appear in the lock file but don't match
+      # the runner's OS/CPU (e.g. @esbuild/aix-ppc64 on a linux-x64 runner).
+      # npm >= 10.9 skips those entries cleanly.
+      - run: npm install -g npm@latest
       - run: npm ci
       - name: TypeScript check
         run: npx tsc --noEmit
