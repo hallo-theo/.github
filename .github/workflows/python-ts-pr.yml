@@ -123,13 +123,16 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
 
-      # Upgrade npm before `npm ci`. Node 20 LTS ships with npm 10.8.2, which
-      # has a known bug (npm/cli#4828) where `npm ci` errors on optional
-      # platform-specific deps that appear in the lock file but don't match
-      # the runner's OS/CPU (e.g. @esbuild/aix-ppc64 on a linux-x64 runner).
-      # npm >= 10.9 skips those entries cleanly.
-      - run: npm install -g npm@latest
-      - run: npm ci
+      # Use `npm install`, not `npm ci`. The new-app skill generates the
+      # lock file on the engineer's machine (typically macOS arm64), which
+      # records every esbuild optional platform package — including the
+      # AIX/PPC64 one. `npm ci` runs in strict mode and tries to install
+      # every lock-file entry, which fails on a linux-x64 runner with
+      # `EBADPLATFORM` for the AIX entry (npm/cli#4828). Upgrading npm at
+      # runtime is not a reliable workaround. `npm install` respects the
+      # lock file when present and gracefully skips platform-incompatible
+      # optional deps, which is what we want here.
+      - run: npm install --no-audit --prefer-offline
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vitest
