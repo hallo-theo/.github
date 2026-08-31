@@ -21,9 +21,60 @@
 #         terraform-path: terraform                    # optional
 #         dockerfile: api/Dockerfile                   # optional — enables docker build sanity
 #
+#     gates-passed:                                    # REQUIRED — see below
+#       needs: [ci]
+#       if: always()
+#       runs-on: ubuntu-latest
+#       steps:
+#         - env:
+#             NEEDS: ${{ toJSON(needs) }}
+#           run: |
+#             bad="$(echo "$NEEDS" | jq -r 'to_entries[]
+#               | select(.value.result != "success" and .value.result != "skipped")
+#               | .key')"
+#             [ -z "$bad" ] || { echo "::error::not green: $bad"; exit 1; }
+#
 # Setting any of api-path / app-path / terraform-path / dockerfile to "" (the
 # default) skips that section. So pure-Windmill apps with no backend just set
 # app-path; pure backends with no frontend just set api-path.
+#
+# ---------------------------------------------------------------------------
+# WHY EVERY CALLER NEEDS ITS OWN `gates-passed` JOB
+# ---------------------------------------------------------------------------
+# The jobs in THIS file cannot be a required status check directly, for two
+# reasons:
+#
+#   1. Every job here is conditional (`if: inputs.<path> != ''`). A repo with
+#      no terraform/ would have to require a `terraform` check that never
+#      succeeds. There is no single check name that is meaningful for all
+#      adopters.
+#   2. Jobs inside a reusable workflow surface PREFIXED by the caller's job
+#      name — `ci / python`, `ci / frontend`. Jobs defined in the caller
+#      surface BARE — `gates-passed`. `project-shepherd` and `mietanpassungen`
+#      already require the bare name, so a caller-local job is what keeps ONE
+#      check-name string across the whole org. That single string is what lets
+#      an org-level ruleset gate every repo without per-repo configuration.
+#
+# A caller job that `uses:` this workflow already aggregates every inner job
+# into one result, so `needs: [ci]` is sufficient — but ADD ANY CALLER-LOCAL
+# JOBS to that `needs` list too, or they gate nothing. `feedback-hub` has a
+# local `widget` job and must use `needs: [ci, widget]`.
+#
+# Two rules that are not obvious and both cost a real outage to learn:
+#
+#   * `skipped` PASSES, `cancelled` FAILS. A section whose path input is empty
+#     has nothing to prove. A cancelled run never actually ran, so reporting
+#     it green would merge untested code.
+#   * NEVER add `paths:` filters to the caller's `pull_request:` trigger. If
+#     the workflow does not run at all, the required check never reports and
+#     every PR sits on "Expected — waiting for status" forever. Filter inside
+#     jobs, never on the trigger of the workflow that owns the required check.
+#
+# Yes, this block is copy-pasted per repo, which this org otherwise avoids.
+# It is the deliberate exception: it carries no security content and no
+# app-specific logic, and if it ever drifts it fails loudly rather than
+# silently passing. That is the opposite of the failure mode that makes
+# copy-pasted prompts and permissions dangerous.
 
 name: "PR (Python + TS, reusable)"
 

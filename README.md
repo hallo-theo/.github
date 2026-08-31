@@ -30,6 +30,9 @@ covers what those workflows actually do, plus the one-time setup commands
 |------|------------|
 | `.github/workflows/python-ts-pr.yml` | Reusable PR check — Python (uv, ruff, pyright, pytest), TS (npm, tsc, vitest), optional Terraform fmt+validate, optional Docker build sanity. |
 | `.github/workflows/python-ts-deploy.yml` | Reusable deploy — pre-flight re-run of PR gates, Docker build + push to Artifact Registry, Cloud Run deploy, optional `wmill app push`. |
+| **[`sdlc/README.md`](sdlc/README.md)** | **The six SDLC stages and the artifact each one commits.** Start here. |
+| `sdlc/templates/` | Copy-in templates: `intent.md`, `spec.md`, `plan.md`, `REVIEW.md`. |
+| `.github/PULL_REQUEST_TEMPLATE.md` | **Org-wide** PR template — GitHub applies it to every repo without its own. This is where the artifact chain is joined. |
 
 ## How to adopt manually (retrofit an existing repo)
 
@@ -67,7 +70,106 @@ jobs:
       app-path: app/object_details.raw_app     # omit if no frontend
       terraform-path: terraform                # omit if no terraform/
       dockerfile: api/Dockerfile               # omit to skip docker build sanity
+
+  # The one required check for this repo. Copy verbatim.
+  # `needs` MUST list `ci` plus every caller-local job that should gate a
+  # merge — a job missing from this list gates nothing.
+  gates-passed:
+    needs: [ci]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert every gate ended in success or skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # `skipped` passes — a section whose path input is empty, or whose
+          # code was untouched, has nothing to prove. `cancelled` FAILS: the
+          # gate never actually ran, so reporting it green would merge
+          # untested code.
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' | sort
+          bad="$(echo "$NEEDS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | .key')"
+          if [ -n "$bad" ]; then
+            echo "::error::Gate failed. Jobs not in {success, skipped}:"
+            echo "$bad" | while read -r j; do echo "::error::  $j"; done
+            exit 1
+          fi
+          echo "All gates passed."
 ```
+
+## `gates-passed` — the org's single required check
+
+**Every repo requires exactly one check, named `gates-passed`.** Not `ci`, not
+the individual jobs. One name across the whole org is the point: it is what
+lets an org-level ruleset gate every repository without per-repo
+configuration.
+
+Why it has to live in the caller rather than in the reusable workflow:
+
+- Every job in `python-ts-pr.yml` is conditional (`if: inputs.<path> != ''`),
+  so there is no single inner check name that is meaningful for all adopters.
+  A repo with no `terraform/` cannot require a `terraform` check.
+- Reusable-workflow jobs surface **prefixed** by the caller's job name
+  (`ci / python`, `ci / frontend`); caller-local jobs surface **bare**
+  (`gates-passed`). `project-shepherd` and `mietanpassungen` already require
+  the bare name — matching it keeps one string org-wide.
+
+Two rules that are not obvious:
+
+1. **Never put `paths:` filters on the `pull_request:` trigger** of the
+   workflow that owns the required check. If the workflow does not run, the
+   check never reports, and every PR sits on *"Expected — waiting for
+   status"* forever. Filter inside jobs instead.
+2. **`skipped` passes, `cancelled` fails.** Skipped means a section had
+   nothing to prove. Cancelled means the gate never ran.
+
+### Turning it on for a repo
+
+```bash
+REPO=<your-repo>
+gh api -X POST "repos/hallo-theo/$REPO/rulesets" --input - <<'JSON'
+{
+  "name": "sdlc-floor",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      }
+    },
+    { "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [ { "context": "gates-passed" } ]
+      }
+    }
+  ]
+}
+JSON
+```
+
+`strict_required_status_checks_policy: true` is *"require branches to be up to
+date before merging"*. Without it a PR can go green against an older `main`
+and merge a combination nothing ever tested. It is currently enabled on zero
+repos in this org, which is why it is in the snippet rather than left to
+taste.
+
+Do this per repo only until the org-level ruleset exists. **The intended end
+state is one org ruleset per repo class, targeted by a custom repository
+property** — so a new repo inherits its gate from its class and nobody
+configures a repository again. That needs org-admin.
 
 ### Deploy workflow (push to main)
 
