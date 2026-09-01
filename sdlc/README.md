@@ -152,6 +152,73 @@ Our amendments, because the playbook assumes conditions we do not have:
   one gateway; an outage there is simultaneously the incident *and* the thing
   that disables the responder.
 
+## Automating merge of agent PRs (human-free merge)
+
+The goal is legitimate: an agent opens a PR, and if it is genuinely safe, it
+ships without waiting for a human. The rule that keeps it safe:
+
+> **Automate the decision, never the ritual.** No agent ever clicks Approve.
+> A merge is either justified by deterministic evidence, or it waits for a
+> human. There is no third path where a second model vouches for the first.
+
+Why a reviewer-agent must not approve:
+
+1. **Correlated failure.** Author-agent and reviewer-agent share failure
+   modes; two LLMs agreeing is not independence, it is the same distribution
+   sampled twice. Our own history is the proof the other way: PR #225 passed
+   *human* review while shipping a prompt/tool contradiction that put 44% of
+   production booking runs on the wrong path — and a **contract test** is what
+   catches it. Review (human or AI) is advisory; tests are evidence.
+2. **Injection becomes merge authority.** Agent PRs are often downstream of
+   untrusted text (feedback items, intents). If an agent's Approve satisfies
+   the ruleset, a prompt injection that reaches the reviewer is a merge.
+3. **It voids the audit trail.** An approval is an accountability claim.
+   From an agent it is theater — and under our escrow obligation, theater in
+   the merge record is worse than an empty approval column.
+
+### The mechanism
+
+Merge authority = **origin × paths × checks**, all machine-readable:
+
+- `required_approving_review_count: 0` stays (already the org setting) — the
+  required check is the control, approvals are not the instrument.
+- A deterministic `auto-merge-eligible` job (in the caller workflow, ~60
+  lines, no LLM) passes only when ALL hold:
+  - **Origin is trusted**: the PR was produced from an *accepted* intent or an
+    engineer session — carried as `agent:{workflow}:{run_id}` provenance in
+    the PR body. PRs whose input chain includes untrusted public text
+    (feedback widgets) are **never eligible**, whatever the diff looks like.
+  - **Paths are calm**: the diff touches no behaviour-bearing path (prompts,
+    tool definitions, thresholds, migrations, terraform, workflow files,
+    CODEOWNERS, the eligibility rules themselves — self-exempting edits must
+    not be possible).
+  - **Evidence is green**: `gates-passed`, plus (Class 2) contract tests and
+    golden reconciliation.
+- Eligible → the workflow enables GitHub **auto-merge**; the PR merges when
+  checks complete. Not eligible → nothing happens; it waits for a human like
+  any other PR. Merge queue where commit rate warrants, so the tested SHA is
+  the shipped SHA.
+
+This is the PR-shaped version of a gate this org has already invented three
+times at runtime (STOP / CALL / NOTE; the 0.90–0.985 do-not-auto-merge band;
+QA_THRESHOLD + hold-mode): **auto above the line, human in the band, block
+below — and the line is drawn by code, not by a model's mood.**
+
+### The trust ladder
+
+Eligibility starts narrow and is widened by evidence, never by convenience:
+
+| Rung | Eligible for human-free merge |
+|---|---|
+| 1 | docs-only diffs; lockfile-only dependency bumps with green tests |
+| 2 | generated/mechanical changes covered by contract tests |
+| 3 | Class 0/1 code paths with proven suite depth (escaped-defect rate earns it) |
+| never | behaviour-bearing paths · anything downstream of untrusted text · terraform applies with a non-empty plan · the eligibility rules themselves |
+
+Escaped defects are the tuning signal (emergent, reported, never a target):
+each one adds a test **and** narrows or freezes eligibility — the same
+event-driven accretion as evals.
+
 ## What we deliberately do not adopt
 
 | Not adopting | Why |
