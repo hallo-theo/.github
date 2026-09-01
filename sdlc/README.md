@@ -24,7 +24,7 @@ intent.md  ──▶  spec.md  ──▶  plan.md  ──▶  diff + tests  ─�
 | Stage | Artifact | Lives at | Written by | Read by |
 |-------|----------|----------|------------|---------|
 | **1 · Plan** | `intent.md` | `intent/<slug>.md` | the originator — **explicitly including non-engineers** | Stage 2 |
-| **2 · Design** | `spec.md` | `spec/<slug>.md` | product owner + agent, with org policy skills attached | Stage 3, and the reviewer |
+| **2 · Design** | `spec.md` | `spec/<slug>.md` | pitch owner + agent, with org policy skills attached | Stage 3, and the reviewer |
 | **3 · Build** | `plan.md`, then the diff | `plan/<slug>.md`, then the PR | plan mode, then the build session | Stage 4/5 |
 | **4 · Test** | the feedback loop | one `make verify` + the eval suite | the repo | agent and human, every iteration |
 | **5 · Deploy** | review findings | PR comments, governed by `REVIEW.md` | the agentic review pass | the author; the audit trail |
@@ -48,8 +48,14 @@ originator corrects it; it is committed.
 Contains: **problem · proposed outcome · affected users and systems ·
 constraints · open questions.**
 
-Governance: the product owner accepts or rejects, logged as a merged or closed
-PR. Acceptance is an **event**, not a status — for intents authored in Notion
+Governance: the intent is accepted or rejected as a logged event (a merged or
+closed PR).
+
+**Who accepts, at hallo theo:** we have no product owners — we run Shape Up,
+and pitches come from the Product VP. Where the playbook says "product owner",
+read **the pitch owner**: the Product VP, or whoever the VP delegates
+acceptance to for small internal tools. The control is the *logged acceptance
+event*, not the job title. Acceptance is an **event**, not a status — for intents authored in Notion
 (where our PMs and PAs work) acceptance exports the page to markdown and
 commits it, so Stages 2 and 3 cannot be built on a document that later changed
 silently.
@@ -61,9 +67,9 @@ every clone and every agent session. This is GDPR-load-bearing, not hygiene.
 
 ## Stage 2 · Design → `spec.md`
 
-Requirements and design collapse into one session. The product owner opens a
-session with the org's policy skills attached (`builder-tools`) and asks for a
-spec that **flags its own concerns** — in the playbook's phrasing: *"Describe
+Requirements and design collapse into one session. The pitch owner (or the
+engineer taking the pitch) opens a session with the org's policy skills
+attached (`builder-tools`) and asks for a spec that **flags its own concerns** — in the playbook's phrasing: *"Describe
 clearly any areas of concern, especially where you cannot satisfy contradicting
 policies."*
 
