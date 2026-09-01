@@ -152,6 +152,28 @@ Our amendments, because the playbook assumes conditions we do not have:
   one gateway; an outage there is simultaneously the incident *and* the thing
   that disables the responder.
 
+## Documents: generate what is derivable, propose what is judgment, gate both
+
+Every repo is born with the full document set (the template ships it):
+pointer `CLAUDE.md` → `AGENTS.md` (guardrails, **enforced-only**: every rule
+names the check that enforces it, or sits under *Advisory* and says so) ·
+`intent/` `spec/` `plan/` · `REVIEW.md` · `tasks/lessons.md` (append-only).
+Skills need no manifest file — `.claude/skills/<name>/SKILL.md` and the
+`builder-tools` plugin are the convention; the directory is the manifest.
+
+Keeping them fresh is automated by KIND, not by a bot editing files on `main`:
+
+| Kind | Examples | How it stays fresh |
+|---|---|---|
+| **Derivable** | make targets, endpoint lists, behaviour-bearing-path inventory, skills-in-use | **Generated** by a CI step from source; a `docs-fresh` check fails when the committed copy differs from the regenerated one. Generated docs cannot drift, only fail. |
+| **Judgment** | `AGENTS.md` guardrails, `CLAUDE.md` guidance, `REVIEW.md`, `lessons.md` entries | **Proposed** — the change PR includes the doc delta (the review compliance pass asks "does this diff change behaviour the docs describe?"), or a follow-up agent PR proposes it. Merged through the same gate as code. |
+
+**Nothing ever silently rewrites an instruction file.** `CLAUDE.md`, `AGENTS.md`
+and `.claude/skills/` are *behaviour-bearing paths for every future agent
+session* — an unreviewed edit there is an instruction injection with a
+one-commit delay. They are therefore on the never-auto-merge list: doc PRs
+touching them always wait for a human, however mechanical they look.
+
 ## Automating merge of agent PRs (human-free merge)
 
 The goal is legitimate: an agent opens a PR, and if it is genuinely safe, it
