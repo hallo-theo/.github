@@ -1,0 +1,100 @@
+# auto-merge-eligible — the deterministic classifier that decides whether a PR
+# may merge with no human involved. Rung 1 of the trust ladder ONLY:
+#
+#   eligible  =  trusted origin  ×  calm paths  ×  (the ruleset's checks)
+#
+# When eligible, this enables GitHub auto-merge on the PR — the merge then
+# happens if and only if `gates-passed` (and anything else the ruleset
+# requires) goes green. This workflow never merges anything itself and never
+# approves anything: it only flips the auto-merge bit. The ruleset stays the
+# authority.
+#
+# Doctrine (sdlc/README.md → "Automating merge of agent PRs"): automate the
+# decision, never the ritual. No agent ever clicks Approve.
+#
+# Caller (add to pr.yml):
+#
+#   auto-merge:
+#     permissions:
+#       contents: write        # enable auto-merge
+#       pull-requests: write
+#     uses: hallo-theo/.github/.github/workflows/auto-merge-eligible.yml@main
+#
+# Repo prerequisite: Settings → Allow auto-merge must be ON, and the ruleset
+# must require gates-passed — otherwise "auto-merge" would mean "merge now".
+# This workflow refuses to enable auto-merge when the repo has no required
+# status checks, precisely to prevent that.
+
+name: "auto-merge-eligible (reusable)"
+
+on:
+  workflow_call: {}
+
+jobs:
+  classify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Classify and maybe enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          ineligible() { echo "NOT ELIGIBLE: $1"; echo "### auto-merge: not eligible — $1" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+
+          # ------------------------------------------------------------------
+          # 1. ORIGIN — untrusted-origin PRs are never eligible, whatever the
+          #    diff looks like. Branch prefixes are the provenance carrier:
+          #    feedback/* comes from public widget text (feedback-implement),
+          #    front-door/* first slices come from stranger free text.
+          # ------------------------------------------------------------------
+          case "$HEAD_REF" in
+            feedback/*|front-door/*) ineligible "untrusted-origin branch prefix ($HEAD_REF)" ;;
+          esac
+          case "$AUTHOR" in
+            feedback-hub-agent*) ineligible "untrusted-origin author ($AUTHOR)" ;;
+          esac
+
+          # ------------------------------------------------------------------
+          # 2. GUARD — refuse when the ruleset requires no status checks:
+          #    enabling auto-merge there would mean "merge immediately".
+          # ------------------------------------------------------------------
+          required=$(gh api "repos/$REPO/rules/branches/$(gh api "repos/$REPO" -q .default_branch)" \
+            -q '[.[] | select(.type=="required_status_checks")] | length')
+          [ "$required" -ge 1 ] || ineligible "repo has no required status checks — auto-merge would bypass everything"
+
+          # ------------------------------------------------------------------
+          # 3. PATHS — rung 1 only. Every changed file must match the
+          #    allowlist. Behaviour-bearing and self-referential paths are
+          #    structurally excluded: .github/** (including this rule set),
+          #    .claude/**, CLAUDE.md, AGENTS.md, REVIEW.md, intent/ spec/ plan/
+          #    (silently auto-merging a plan edit is the plan-retrofit hole).
+          # ------------------------------------------------------------------
+          gh api "repos/$REPO/pulls/$PR/files" --paginate -q '.[].filename' > /tmp/files
+          [ -s /tmp/files ] || ineligible "empty diff"
+          echo "changed files:"; sed 's/^/  /' /tmp/files
+
+          bad=""
+          while IFS= read -r f; do
+            case "$f" in
+              README.md|docs/*.md|docs/**/*.md|tasks/lessons.md) ;;   # docs rung
+              package-lock.json|*/package-lock.json|uv.lock) ;;       # lockfile rung
+              *) bad="$f"; break ;;
+            esac
+          done < /tmp/files
+          [ -z "$bad" ] || ineligible "path outside rung-1 allowlist: $bad"
+
+          # ------------------------------------------------------------------
+          # 4. ELIGIBLE — enable auto-merge (merge method: merge commit).
+          #    The PR merges only when the ruleset's required checks pass.
+          # ------------------------------------------------------------------
+          gh pr merge "$PR" --repo "$REPO" --auto --merge
+          echo "### auto-merge: ENABLED (rung 1 — docs/lockfile-only, trusted origin)" >> "$GITHUB_STEP_SUMMARY"
+          echo "ELIGIBLE — auto-merge enabled; the ruleset decides from here."

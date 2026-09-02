@@ -226,6 +226,14 @@ times at runtime (STOP / CALL / NOTE; the 0.90–0.985 do-not-auto-merge band;
 QA_THRESHOLD + hold-mode): **auto above the line, human in the band, block
 below — and the line is drawn by code, not by a model's mood.**
 
+**Implemented:** rung 1 ships as the reusable workflow
+[`auto-merge-eligible.yml`](../.github/workflows/auto-merge-eligible.yml) —
+add the caller job from its header comment to a repo's `pr.yml`, switch on
+*Allow auto-merge* in repo settings, and docs-only / lockfile-only PRs from
+trusted origins merge themselves the moment `gates-passed` is green. It
+refuses to act on repos with no required checks, and its allowlist
+structurally excludes `.github/**`, so it cannot self-exempt.
+
 ### The trust ladder
 
 Eligibility starts narrow and is widened by evidence, never by convenience:
