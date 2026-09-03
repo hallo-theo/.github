@@ -25,6 +25,8 @@
 #       contents: write
 #       pull-requests: write
 #     uses: hallo-theo/.github/.github/workflows/auto-merge-eligible.yml@main
+#     secrets:
+#       PR_REVIEWER_PRIVATE_KEY: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
 #
 # Repo prerequisites: Allow auto-merge ON; ruleset requires gates-passed
 # (refused otherwise — auto-merge with no required checks means merge-now).
@@ -32,7 +34,15 @@
 name: "auto-merge-eligible (reusable)"
 
 on:
-  workflow_call: {}
+  workflow_call:
+    secrets:
+      PR_REVIEWER_PRIVATE_KEY:
+        # Armer identity (pitch-owner decision 2026-09-03): merges are made as
+        # theo-pr-reviewer[bot] via an App token, NOT github.token — pushes by
+        # github-actions[bot] do not trigger workflows (GitHub anti-recursion),
+        # so github.token-armed merges silently skip the deploy. Optional so
+        # pre-rollout repos keep merging; the fallback warns loudly.
+        required: false
 
 jobs:
   classify:
@@ -42,9 +52,21 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Recorded trade-off: the reviewer App is also the merge armer — one
+      # App, two functions; it keeps contents:write permanently. Chosen over
+      # a dedicated agent App for operational simplicity.
+      - name: Mint armer token (theo-pr-reviewer)
+        id: armer
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PR_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
+
       - name: Classify and maybe enable auto-merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.armer.outputs.token || github.token }}
+          ARMER: ${{ steps.armer.outcome }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -97,6 +119,10 @@ jobs:
           # 4. ELIGIBLE — enable auto-merge (merge method: merge commit).
           #    The PR merges only when the ruleset's required checks pass.
           # ------------------------------------------------------------------
+          if [ "${ARMER:-}" != "success" ]; then
+            echo "::warning::armed with github.token — this merge will NOT trigger push workflows (deploy). Install theo-pr-reviewer here and scope org secret PR_REVIEWER_PRIVATE_KEY + org var PR_REVIEWER_APP_ID to this repo."
+            echo "### ⚠️ armed with github.token — DEPLOY WILL NOT AUTO-TRIGGER" >> "$GITHUB_STEP_SUMMARY"
+          fi
           gh pr merge "$PR" --repo "$REPO" --auto --merge
           echo "### auto-merge: ENABLED (default-on — merges when gates-passed is green)" >> "$GITHUB_STEP_SUMMARY"
           echo "ELIGIBLE — auto-merge enabled; the ruleset decides from here."
