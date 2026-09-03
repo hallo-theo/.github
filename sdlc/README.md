@@ -246,6 +246,15 @@ structurally excludes `.github/**`, so it cannot self-exempt.
 > decides auto-merging). The ladder below is kept as history and as the
 > fallback design should the decision ever be reversed.
 
+> **Armer identity (pitch-owner decision, 2026-09-03):** auto-merge is armed
+> with a **theo-pr-reviewer App token**, never `github.token` — GitHub skips
+> workflow triggers for pushes caused by github-actions[bot], so
+> `github.token`-armed merges silently never deploy (found live: front-door
+> served a day-old image while two merged slices sat undeployed). Recorded
+> trade-off: the reviewer App is both reviewer and merge-armer and therefore
+> keeps `contents:write` permanently; chosen over a dedicated App for
+> operational simplicity.
+
 ### The trust ladder
 
 Eligibility starts narrow and is widened by evidence, never by convenience:
