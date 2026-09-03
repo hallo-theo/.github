@@ -234,6 +234,18 @@ trusted origins merge themselves the moment `gates-passed` is green. It
 refuses to act on repos with no required checks, and its allowlist
 structurally excludes `.github/**`, so it cannot self-exempt.
 
+> **Pitch-owner decision, 2026-09-03 (supersedes the ladder below as the
+> default):** *"The approval step must be disabled; automerge must be enabled
+> so that it merges automatically after gates-passed and CI all green."*
+> Implemented: no approving-review requirement anywhere in the flow;
+> `auto-merge-eligible` arms every PR by default. The agentic reviewer still
+> reviews everything and its CHANGES_REQUESTED still blocks until resolved —
+> evidence, not ritual. Two carve-outs remain because they protect the rule
+> itself: untrusted-origin branches (public LLM-processed text), and edits
+> under `.github/` (a PR must not auto-merge changes to the machinery that
+> decides auto-merging). The ladder below is kept as history and as the
+> fallback design should the decision ever be reversed.
+
 ### The trust ladder
 
 Eligibility starts narrow and is widened by evidence, never by convenience:
