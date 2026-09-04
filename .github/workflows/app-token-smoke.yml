@@ -1,0 +1,48 @@
+# Manual smoke test for the org's GitHub App credentials.
+# Proves an App-ID/private-key pair actually mints a live installation
+# token — run it after rotating a key or onboarding a new App, instead of
+# discovering a bad .pem paste in the middle of a real agent run.
+name: App Token Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which App credential pair to test
+        type: choice
+        options:
+          - sdlc-agent
+          - pr-reviewer
+        default: sdlc-agent
+
+permissions: {}
+
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint (theo-sdlc-agent)
+        if: inputs.app == 'sdlc-agent'
+        id: sdlc
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SDLC_AGENT_APP_ID }}
+          private-key: ${{ secrets.SDLC_AGENT_PRIVATE_KEY }}
+
+      - name: Mint (theo-pr-reviewer)
+        if: inputs.app == 'pr-reviewer'
+        id: reviewer
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PR_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
+
+      - name: Prove the token is live
+        env:
+          GH_TOKEN: ${{ steps.sdlc.outputs.token || steps.reviewer.outputs.token }}
+          APP_SLUG: ${{ steps.sdlc.outputs.app-slug || steps.reviewer.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          COUNT=$(gh api /installation/repositories -q .total_count)
+          echo "✅ $APP_SLUG minted a live token that sees $COUNT repositories"
+          echo "### ✅ $APP_SLUG token OK — sees $COUNT repositories" >> "$GITHUB_STEP_SUMMARY"
