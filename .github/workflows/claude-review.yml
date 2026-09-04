@@ -33,7 +33,9 @@
 #
 # Org-level prerequisites (set once): org variable PR_REVIEWER_APP_ID,
 # org secrets PR_REVIEWER_PRIVATE_KEY + LITELLM_API_KEY, and the
-# theo-pr-reviewer App installed on the repo (pull requests: RW).
+# theo-pr-reviewer App installed on the repo (contents: RW + pull
+# requests: RW — contents is needed by auto-merge-eligible's merge and
+# first-slice's branch push, not by this review-only workflow).
 # Secrets are passed EXPLICITLY, never via `secrets: inherit` — the caller
 # hands over exactly two, not everything the repo holds.
 
