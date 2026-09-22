@@ -90,8 +90,15 @@ jobs:
                CLAUDE.md conventions.
             2. Judge correctness, regressions, security, and whether it builds /
                keeps tests green. Ignore pure style nits.
-            3. Post concrete review comments for anything real you find.
-            4. Submit EXACTLY ONE review, and do NOT merge:
+            3. Docs freshness (org standard): AGENTS.md and the repo's other
+               *.md docs are the living context every agent session starts
+               from. If this diff changes something those docs describe —
+               endpoints, commands, behavior, architecture, guardrails — and
+               the same PR does not update them, that is a BLOCKING finding:
+               name the stale file and section. Docs and code move atomically.
+               (No finding if the docs genuinely need no change.)
+            4. Post concrete review comments for anything real you find.
+            5. Submit EXACTLY ONE review, and do NOT merge:
                - No blocking issues → approve:
                  gh pr review ${{ github.event.pull_request.number }} --approve \
                    --body "Reviewed by Claude — no blocking issues. <summary>"
