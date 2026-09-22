@@ -1,0 +1,155 @@
+# Repo onboarder — makes the org standard unavoidable. When ANY repo is
+# created (terminal, UI, API — the org webhook catches them all via the
+# front-door API), this pushes the standard kit and sets the `sdlc` custom
+# property so the org rulesets apply:
+#   kit: AGENTS.md skeleton + CLAUDE.md (@AGENTS.md) + theo-pr-reviewer stub
+#   property: sdlc=baseline (PR-only rules; graduates to `floor` when the
+#             repo wires gates-passed)
+# Front-door-born repos are skipped — they get the full kit from the template.
+# Idempotent: existing files are never overwritten; property only set if unset.
+
+name: Onboard
+
+on:
+  repository_dispatch:
+    types: [front-door-onboard]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onboard-${{ github.event.client_payload.repo }}
+  cancel-in-progress: false
+
+jobs:
+  onboard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard the payload (fail closed)
+        env:
+          REPO_IN: ${{ github.event.client_payload.repo }}
+        run: |
+          set -euo pipefail
+          echo "$REPO_IN" | grep -Eq '^[A-Za-z0-9._-]{1,100}$' \
+            || { echo "::error::repo name fails shape guard"; exit 1; }
+          echo "REPO=$REPO_IN" >> "$GITHUB_ENV"
+
+      - name: Mint onboarder token (theo-provisioner)
+        id: app
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PROVISIONER_APP_ID }}
+          private-key: ${{ secrets.PROVISIONER_PRIVATE_KEY }}
+          owner: hallo-theo
+
+      - name: Skip if already standardized
+        id: gate
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/hallo-theo/$REPO" >/dev/null 2>&1; then
+            echo "::notice::repo vanished — nothing to onboard"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          TOPICS=$(gh api "repos/hallo-theo/$REPO/topics" -q '.names | join(",")')
+          PROP=$(gh api "repos/hallo-theo/$REPO/properties/values" -q '.[] | select(.property_name=="sdlc") | .value' 2>/dev/null || true)
+          if [[ "$TOPICS" == *created-by-front-door* || -n "$PROP" ]]; then
+            echo "::notice::already standardized (topics=$TOPICS prop=$PROP)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the standard kit (never overwrites existing files)
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          git clone -q "https://x-access-token:${GH_TOKEN}@github.com/hallo-theo/${REPO}.git" work
+          cd work
+          # brand-new repos may have an unborn default branch
+          BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo main)
+          git checkout -q -B "$BRANCH"
+          ADDED=""
+          if [ ! -f AGENTS.md ]; then
+            cat > AGENTS.md <<'MD'
+          # Agent guide
+
+          <!-- Onboarded by the org standard (hallo-theo/.github onboard.yml).
+               Owners / the context agent: replace the TBD sections. -->
+
+          ## What this application does
+
+          _TBD — describe purpose, users, and the systems it touches. Until
+          then, agents must read the code before assuming anything._
+
+          ## Working here
+
+          - Every rule in this file must stay true — the org reviewer BLOCKS
+            any PR that changes behavior these docs describe without updating
+            them in the same PR (docs and code move atomically).
+          - Merges happen only via PR (org ruleset `sdlc-baseline`). When this
+            repo wires a `gates-passed` check, graduate it to `sdlc=floor`.
+
+          ## Org context
+
+          Org-wide platform and conventions: see `sdlc/ORG.md` in
+          [hallo-theo/.github](https://github.com/hallo-theo/.github).
+          MD
+            ADDED="$ADDED AGENTS.md"
+          fi
+          if [ ! -f CLAUDE.md ]; then
+            printf '@AGENTS.md\n' > CLAUDE.md
+            ADDED="$ADDED CLAUDE.md"
+          fi
+          if [ ! -f .github/workflows/claude-review.yml ]; then
+            mkdir -p .github/workflows
+            cat > .github/workflows/claude-review.yml <<'YML'
+          name: Claude PR Review
+          on:
+            pull_request:
+              types: [opened, synchronize, reopened]
+          concurrency:
+            group: claude-review-$[[ github.event.pull_request.number ]]
+            cancel-in-progress: true
+          jobs:
+            review:
+              permissions:
+                contents: read
+                pull-requests: write
+              uses: hallo-theo/.github/.github/workflows/claude-review.yml@main
+              secrets:
+                PR_REVIEWER_PRIVATE_KEY: $[[ secrets.PR_REVIEWER_PRIVATE_KEY ]]
+                # CI-agent spend rides its own LiteLLM virtual key (ci-agents) so agent
+                # cost is attributable separately from product LLM calls (standard §8).
+                LITELLM_API_KEY: $[[ secrets.LITELLM_CI_AGENTS_KEY ]]
+          YML
+            sed -i 's/\$\[\[/${{/g; s/\]\]/}}/g' .github/workflows/claude-review.yml
+            ADDED="$ADDED claude-review.yml"
+          fi
+          if [ -z "$ADDED" ]; then
+            echo "::notice::kit already complete — only setting the property"
+          else
+            git config user.name "theo-provisioner[bot]"
+            git config user.email "theo-provisioner[bot]@users.noreply.github.com"
+            git add -A
+            git commit -q -m "Onboard to the org SDLC standard (kit:$ADDED)
+
+          Pushed by onboard.yml in hallo-theo/.github. AGENTS.md/CLAUDE.md are
+          the repo's living context; the org reviewer keeps them current."
+            git push -q origin "HEAD:$BRANCH"
+          fi
+          echo "added:$ADDED"
+
+      - name: Set sdlc=baseline (activates the org ruleset)
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api -X PATCH "repos/hallo-theo/$REPO/properties/values" \
+            --input - <<'JSON' && echo "✓ sdlc=baseline" \
+            || echo "::warning::could not set the sdlc property (App may need org Custom-properties permission) — set it manually"
+          { "properties": [ { "property_name": "sdlc", "value": "baseline" } ] }
+          JSON
