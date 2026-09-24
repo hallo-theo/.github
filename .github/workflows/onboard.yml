@@ -125,7 +125,9 @@ jobs:
                 # cost is attributable separately from product LLM calls (standard §8).
                 LITELLM_API_KEY: $[[ secrets.LITELLM_CI_AGENTS_KEY ]]
           YML
-            sed -i 's/\$\[\[/${{/g; s/\]\]/}}/g' .github/workflows/claude-review.yml
+            # \x7b = '{' , \x7d = '}' — dollar-brace-brace must never appear
+            # literally in this file or GitHub's expression lexer rejects it.
+            sed -i 's/\$\[\[/$\x7b\x7b/g; s/\]\]/\x7d\x7d/g' .github/workflows/claude-review.yml
             ADDED="$ADDED claude-review.yml"
           fi
           if [ -z "$ADDED" ]; then
