@@ -23,6 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  POSTHOG_SDLC_TOKEN: ${{ secrets.POSTHOG_SDLC_TOKEN }}
   GCP_PROJECT: project-shepherd-494112
   GCP_REGION: europe-west3
   FD: https://front-door-api-757287535499.europe-west3.run.app
@@ -75,6 +76,14 @@ jobs:
           echo "::add-mask::$QUEUE_KEY"
           echo "QUEUE_KEY=$QUEUE_KEY" >> "$GITHUB_ENV"
           cat > "$RUNNER_TEMP/report.sh" <<'SH'
+          ph() {  # ph <event> <distinct_id> <extra-json>  — never fails the run
+            [ -z "${POSTHOG_SDLC_TOKEN:-}" ] && return 0
+            jq -n --arg e "$1" --arg d "$2" --argjson x "${3:-{}}" \
+              '{api_key: env.POSTHOG_SDLC_TOKEN, event: $e, distinct_id: $d,
+                properties: ($x + {app: "sdlc-workflows"})}' \
+            | curl -s -o /dev/null -m 5 -X POST https://eu.i.posthog.com/capture/ \
+                -H 'Content-Type: application/json' -d @- || true
+          }
           report_step() {  # report_step <index> <name> <running|ok|fail> [log]
             echo "$1|$2" > "$RUNNER_TEMP/current_step"
             jq -n --argjson i "$1" --arg n "$2" --arg s "$3" --arg l "${4:-}" \
@@ -91,6 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/report.sh"
+          ph sdlc_workflow "$RID" '{"workflow":"decommission","action":"started"}'
           report_step 1 "Destroy infrastructure (Terraform)" running
           if gh api "repos/hallo-theo/$SLUG" >/dev/null 2>&1; then
             git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/hallo-theo/${SLUG}.git" work
@@ -163,6 +173,7 @@ jobs:
             echo "::notice::repo already gone"
           fi
           report_step 5 "Delete repository" ok "hallo-theo/$SLUG erased"
+          ph sdlc_workflow "$RID" '{"workflow":"decommission","action":"completed"}'
 
       - name: Report back to the front door
         run: |
@@ -178,3 +189,4 @@ jobs:
           source "$RUNNER_TEMP/report.sh" 2>/dev/null || exit 0
           CUR=$(cat "$RUNNER_TEMP/current_step" 2>/dev/null || echo "1|Destroy infrastructure (Terraform)")
           report_step "${CUR%%|*}" "${CUR##*|}" fail "teardown failed here — see the Decommission run in hallo-theo/.github Actions"
+          ph sdlc_workflow "$RID" "{\"workflow\":\"decommission\",\"action\":\"failed\",\"step\":\"${CUR##*|}\"}"

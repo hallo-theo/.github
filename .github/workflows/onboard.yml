@@ -17,6 +17,9 @@ on:
 permissions:
   contents: read
 
+env:
+  POSTHOG_SDLC_TOKEN: ${{ secrets.POSTHOG_SDLC_TOKEN }}
+
 concurrency:
   group: onboard-${{ github.event.client_payload.repo }}
   cancel-in-progress: false
@@ -150,6 +153,15 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
+          ph() {
+            [ -z "${POSTHOG_SDLC_TOKEN:-}" ] && return 0
+            jq -n --arg e "$1" --arg d "$2" --argjson x "${3:-{}}" \
+              '{api_key: env.POSTHOG_SDLC_TOKEN, event: $e, distinct_id: $d,
+                properties: ($x + {app: "sdlc-workflows"})}' \
+            | curl -s -o /dev/null -m 5 -X POST https://eu.i.posthog.com/capture/ \
+                -H 'Content-Type: application/json' -d @- || true
+          }
+          ph sdlc_repo_onboarded "repo:$REPO" '{}'
           gh api -X PATCH "repos/hallo-theo/$REPO/properties/values" \
             --input - <<'JSON' && echo "✓ sdlc=baseline" \
             || echo "::warning::could not set the sdlc property (App may need org Custom-properties permission) — set it manually"

@@ -32,6 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  POSTHOG_SDLC_TOKEN: ${{ secrets.POSTHOG_SDLC_TOKEN }}
   GCP_PROJECT: project-shepherd-494112
   GCP_PROJECT_NUMBER: "757287535499"
   GCP_REGION: europe-west3
@@ -83,6 +84,14 @@ jobs:
             echo "$var=$val" >> "$GITHUB_ENV"
           done
           cat > "$RUNNER_TEMP/report.sh" <<'SH'
+          ph() {  # ph <event> <distinct_id> <extra-json>  — never fails the run
+            [ -z "${POSTHOG_SDLC_TOKEN:-}" ] && return 0
+            jq -n --arg e "$1" --arg d "$2" --argjson x "${3:-{}}" \
+              '{api_key: env.POSTHOG_SDLC_TOKEN, event: $e, distinct_id: $d,
+                properties: ($x + {app: "sdlc-workflows"})}' \
+            | curl -s -o /dev/null -m 5 -X POST https://eu.i.posthog.com/capture/ \
+                -H 'Content-Type: application/json' -d @- || true
+          }
           report_step() {  # report_step <index> <name> <running|ok|fail> [log]
             echo "$1|$2" > "$RUNNER_TEMP/current_step"
             jq -n --argjson i "$1" --arg n "$2" --arg s "$3" --arg l "${4:-}" \
@@ -106,6 +115,7 @@ jobs:
           grep -qF '<<<UNTRUSTED_INTENT' "$RUNNER_TEMP/intent.md" \
             || { echo "::error::intent is not fenced — refusing"; exit 1; }
           curl -sf -X POST "$FD/api/queue/$SLUG/provisioning" -H "X-Queue-Key: $QUEUE_KEY" >/dev/null || true
+          source "$RUNNER_TEMP/report.sh"; ph sdlc_workflow "$RID" '{"workflow":"provision","action":"started"}'
           # v1 scope: the golden path's standard shape. Others stay break-glass.
           if [ "$SHAPE" != "full-stack" ]; then
             source "$RUNNER_TEMP/report.sh"
@@ -311,6 +321,7 @@ jobs:
           report_step 6 "Dispatch first slice" ok "agent building — PR appears in a few minutes"
           curl -sf -X POST "$FD/api/queue/$SLUG/repo-ready" -H "X-Queue-Key: $QUEUE_KEY" >/dev/null || true
           report_step 7 "Repo ready" ok "https://github.com/hallo-theo/$SLUG · $CLOUD_RUN_URL"
+          ph sdlc_workflow "$RID" '{"workflow":"provision","action":"completed"}'
 
       - name: Report failure to the owner's progress panel
         if: failure()
@@ -318,3 +329,4 @@ jobs:
           source "$RUNNER_TEMP/report.sh" 2>/dev/null || exit 0
           CUR=$(cat "$RUNNER_TEMP/current_step" 2>/dev/null || echo "1|Create GitHub repo")
           report_step "${CUR%%|*}" "${CUR##*|}" fail "provisioning failed here — see the Provision run in hallo-theo/.github Actions"
+          ph sdlc_workflow "$RID" "{\"workflow\":\"provision\",\"action\":\"failed\",\"step\":\"${CUR##*|}\"}"
