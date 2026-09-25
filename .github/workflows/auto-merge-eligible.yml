@@ -9,14 +9,23 @@
 # that is a gate producing evidence, not an approval ritual. Nothing needs a
 # human click on the happy path.
 #
-# Exactly TWO carve-outs remain, both protecting the rule itself:
-#   1. Untrusted-origin branches (feedback/*, front-door/*): their content is
-#      public, LLM-processed text — the same hardening that fences it in
-#      feedback-implement.yml holds its merges for a human.
+# Exactly TWO hard carve-outs remain, both protecting the rule itself:
+#   1. Feedback-lane origin (feedback/* branches, feedback-hub-agent PRs):
+#      their content is public widget text — the same hardening that fences it
+#      in feedback-implement.yml holds its merges for a human.
 #   2. Edits under .github/ (workflows, this file, CODEOWNERS): a PR may not
 #      auto-merge changes to the machinery that decides auto-merging —
 #      otherwise one PR can no-op the gate and ship itself.
 # Removing either is a one-line change and an explicit pitch-owner decision.
+#
+# front-door/* agent PRs (first-slice, roadmap, ticket work authored by
+# theo-sdlc-agent[bot]) left the human carve-out on 2026-09-25 (pitch-owner
+# decision, Phase 3): they merge REVIEW-THEN-GREEN — auto-merge is armed only
+# when theo-pr-reviewer submits an APPROVED review, and every new commit
+# DISARMS it until re-approved, so nothing unreviewed rides an old approval.
+# Stricter than the default (which never waits for the review verdict),
+# because the origin is stranger free text. Any other author on that branch
+# prefix still waits for a human.
 #
 # Caller (add to pr.yml):
 #
@@ -27,6 +36,24 @@
 #     uses: hallo-theo/.github/.github/workflows/auto-merge-eligible.yml@main
 #     secrets:
 #       PR_REVIEWER_PRIVATE_KEY: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
+#
+# For the agent-PR path the repo must ALSO call this workflow on review
+# events, in a separate workflow file (adding the trigger to pr.yml would
+# re-run CI and let a skipped `ci` report a green gates-passed on a sha the
+# real gate never tested):
+#
+#   # .github/workflows/arm-on-approval.yml
+#   on:
+#     pull_request_review:
+#       types: [submitted]
+#   jobs:
+#     arm:
+#       permissions:
+#         contents: write
+#         pull-requests: write
+#       uses: hallo-theo/.github/.github/workflows/auto-merge-eligible.yml@main
+#       secrets:
+#         PR_REVIEWER_PRIVATE_KEY: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
 #
 # Repo prerequisites: Allow auto-merge ON; ruleset requires gates-passed
 # (refused otherwise — auto-merge with no required checks means merge-now).
@@ -46,7 +73,7 @@ on:
 
 jobs:
   classify:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -69,20 +96,55 @@ jobs:
           ARMER: ${{ steps.armer.outcome }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          PR_STATE: ${{ github.event.pull_request.state }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
+          EVENT: ${{ github.event_name }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEWER: ${{ github.event.review.user.login }}
         run: |
           set -euo pipefail
           ineligible() { echo "NOT ELIGIBLE: $1"; echo "### auto-merge: not eligible — $1" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
 
           # ------------------------------------------------------------------
-          # 1. ORIGIN — untrusted-origin PRs are never eligible, whatever the
-          #    diff looks like. Branch prefixes are the provenance carrier:
-          #    feedback/* comes from public widget text (feedback-implement),
-          #    front-door/* first slices come from stranger free text.
+          # 0. EVENT ROUTING — pull_request events arm trusted-origin PRs the
+          #    moment they open; pull_request_review events exist only for the
+          #    agent-PR path in step 1 (arm on approval). A non-approval
+          #    review never arms anything, and a changes-request on an agent
+          #    branch actively DISARMS a stale arm.
+          # ------------------------------------------------------------------
+          [ "$PR_STATE" = "open" ] || ineligible "PR is not open ($PR_STATE)"
+          if [ "$EVENT" = "pull_request_review" ] && [ "$REVIEW_STATE" != "approved" ]; then
+            if [ "$REVIEW_STATE" = "changes_requested" ]; then
+              case "$HEAD_REF" in
+                front-door/*) gh pr merge "$PR" --repo "$REPO" --disable-auto || true ;;
+              esac
+            fi
+            ineligible "review state '$REVIEW_STATE' is not an approval"
+          fi
+
+          # ------------------------------------------------------------------
+          # 1. ORIGIN — provenance rides the branch prefix. feedback/* (public
+          #    widget text) is never eligible, whatever the diff looks like.
+          #    front-door/* is agent work built from fenced stranger text: per
+          #    the 2026-09-25 pitch-owner decision it merges review-then-green
+          #    — armed ONLY by a fresh theo-pr-reviewer APPROVED event,
+          #    disarmed on every new commit so an unreviewed push can never
+          #    ride an old approval. Other authors on that prefix wait for a
+          #    human.
           # ------------------------------------------------------------------
           case "$HEAD_REF" in
-            feedback/*|front-door/*) ineligible "untrusted-origin branch prefix ($HEAD_REF)" ;;
+            feedback/*) ineligible "untrusted-origin branch prefix ($HEAD_REF)" ;;
+            front-door/*)
+              [ "$AUTHOR" = "theo-sdlc-agent[bot]" ] \
+                || ineligible "front-door/* PR not authored by theo-sdlc-agent ($AUTHOR)"
+              if [ "$EVENT" = "pull_request" ]; then
+                gh pr merge "$PR" --repo "$REPO" --disable-auto || true
+                ineligible "agent PR arms only on a theo-pr-reviewer approval (new commits disarm until re-approved)"
+              fi
+              [ "$REVIEWER" = "theo-pr-reviewer[bot]" ] \
+                || ineligible "approval is not from theo-pr-reviewer ($REVIEWER)"
+              ;;
           esac
           case "$AUTHOR" in
             feedback-hub-agent*) ineligible "untrusted-origin author ($AUTHOR)" ;;
