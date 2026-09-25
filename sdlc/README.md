@@ -91,6 +91,11 @@ up as a visible revision instead of a silent retrofit. Without the pin, any
 "diff matches plan?" check compares the diff against a plan rewritten to match
 it, and passes trivially forever.
 
+On Front-Door-born repos, the plan for everything *after* the first slice is
+the admin agent's `plan/roadmap.md` + `plan/tickets.json`
+([contract](templates/roadmap.md)) — the artifact that turns one intent into
+a board of worker tickets.
+
 ## Stage 4 · Test → the feedback loop
 
 **One command.** `make verify` runs lint, typecheck and tests. If an agent needs
@@ -241,10 +246,24 @@ structurally excludes `.github/**`, so it cannot self-exempt.
 > `auto-merge-eligible` arms every PR by default. The agentic reviewer still
 > reviews everything and its CHANGES_REQUESTED still blocks until resolved —
 > evidence, not ritual. Two carve-outs remain because they protect the rule
-> itself: untrusted-origin branches (public LLM-processed text), and edits
-> under `.github/` (a PR must not auto-merge changes to the machinery that
-> decides auto-merging). The ladder below is kept as history and as the
-> fallback design should the decision ever be reversed.
+> itself: untrusted-origin branches (public LLM-processed text; narrowed on
+> 2026-09-25 — see below), and edits under `.github/` (a PR must not
+> auto-merge changes to the machinery that decides auto-merging). The ladder
+> below is kept as history and as the fallback design should the decision
+> ever be reversed.
+
+> **Pitch-owner decision, 2026-09-25 (Phase 3):** agent-authored
+> `front-door/*` PRs — first slice, roadmap, and ticket work by
+> `theo-sdlc-agent[bot]` — leave the human carve-out and merge
+> **review-then-green**: `auto-merge-eligible` arms them only when
+> `theo-pr-reviewer` submits an APPROVED review (the caller adds a
+> `pull_request_review` trigger in a separate `arm-on-approval.yml`), and
+> every new commit disarms until re-approved — nothing unreviewed rides an
+> old approval. That is *stricter* than the estate default, which never waits
+> for the review verdict, because the origin is stranger free text. With
+> this, **Accept is the single human gate** from idea to running
+> application; the review-fix loop closes findings without a human. The
+> `feedback/*` and `.github/**` carve-outs are unchanged.
 
 > **Armer identity (pitch-owner decision, 2026-09-03):** auto-merge is armed
 > with a **theo-pr-reviewer App token**, never `github.token` — GitHub skips
