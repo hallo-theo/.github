@@ -293,7 +293,7 @@ jobs:
             {parent: {type: "data_source_id", data_source_id: $ds},
              properties: {
                "Ticket":     {title: [{text: {content: ($slug + " · first slice")}}]},
-               "Status":     {select: {name: "dispatched"}},
+               "Status":     {select: {name: "In Progress"}},
                "Agent":      {select: {name: "theo-sdlc-agent"}},
                "Repo":       {url: ("https://github.com/hallo-theo/" + $slug)},
                "Request-ID": {rich_text: [{text: {content: $rid}}]},
