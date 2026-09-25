@@ -90,6 +90,14 @@ jobs:
                CLAUDE.md conventions.
             2. Judge correctness, regressions, security, and whether it builds /
                keeps tests green. Ignore pure style nits.
+               Also enforce the ORG ENGINEERING STANDARD (sdlc/ORG.md in
+               hallo-theo/.github) — BLOCKING findings, not suggestions:
+               behavior changes without tests in the same PR; functions mixing
+               validate/transform/persist responsibilities; dead or
+               commented-out code; copy-paste duplication of non-trivial
+               logic; silent/bare exception swallowing; wrong status codes
+               (client mistakes must never 500); inline LLM prompt strings.
+               Name the file and line for each.
             3. Docs freshness (org standard): AGENTS.md and the repo's other
                *.md docs are the living context every agent session starts
                from. If this diff changes something those docs describe —

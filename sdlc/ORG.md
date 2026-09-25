@@ -77,6 +77,28 @@ Standort from a city name.
 If your task smells like one of these, extend that repo or call its API — do
 not reimplement its domain in a new place.
 
+## Engineering standard (enforced by the org reviewer on every PR)
+
+The reviewer blocks PRs that violate these — they are not style preferences:
+
+- **Small, single-purpose functions.** A function that validates, transforms
+  AND persists is three functions. Name things for what they do.
+- **Behavior changes ship with tests.** New endpoint, changed rule, fixed bug
+  → a test pins it in the same PR. A bug fixed without a regression test will
+  come back.
+- **No dead code.** No commented-out blocks, no `if False` graveyards, no
+  unused exports "for later". Delete it; git remembers.
+- **No copy-paste duplication** of non-trivial logic — extract it. (Three
+  similar lines beat a premature abstraction; three similar functions don't.)
+- **Errors are handled honestly.** No bare/silent excepts; fire-and-forget is
+  allowed only for observability side-channels, and it logs. User-facing
+  failures return correct status codes (422 for bad input, never a 500).
+- **Comments state constraints the code can't show** — why, not what. No
+  narration, no changelog comments.
+- **LLM prompts live in dedicated resource files**, never inline strings.
+- **Dependencies are a liability**: add one only when it clearly beats
+  writing the ten lines yourself.
+
 ## Non-negotiables for agents
 
 - **GDPR**: personal data (names with addresses, IBANs, owner/tenant contact
