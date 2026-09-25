@@ -68,11 +68,30 @@ jobs:
           private-key: ${{ secrets.PROVISIONER_PRIVATE_KEY }}
           owner: hallo-theo
 
+      - name: Progress reporter (phase decommission)
+        run: |
+          set -euo pipefail
+          QUEUE_KEY=$(gcloud secrets versions access latest --secret=front-door-queue-api-key --project="$GCP_PROJECT")
+          echo "::add-mask::$QUEUE_KEY"
+          echo "QUEUE_KEY=$QUEUE_KEY" >> "$GITHUB_ENV"
+          cat > "$RUNNER_TEMP/report.sh" <<'SH'
+          report_step() {  # report_step <index> <name> <running|ok|fail> [log]
+            echo "$1|$2" > "$RUNNER_TEMP/current_step"
+            jq -n --argjson i "$1" --arg n "$2" --arg s "$3" --arg l "${4:-}" \
+              '{index:$i, total:5, name:$n, status:$s, phase:"decommission", log:$l}' \
+            | curl -sf -X POST "$FD/api/queue/$SLUG/progress" \
+                -H "X-Queue-Key: $QUEUE_KEY" -H "Content-Type: application/json" \
+                -d @- >/dev/null || true
+          }
+          SH
+
       - name: Terraform destroy (infra first — needs the repo's config)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/report.sh"
+          report_step 1 "Destroy infrastructure (Terraform)" running
           if gh api "repos/hallo-theo/$SLUG" >/dev/null 2>&1; then
             git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/hallo-theo/${SLUG}.git" work
             if [ -d work/terraform ]; then
@@ -89,18 +108,34 @@ jobs:
           fi
           gsutil -m rm -r "gs://${GCP_PROJECT}-tfstate/${SLUG}" 2>/dev/null \
             && echo "✓ tfstate prefix removed" || echo "::notice::no tfstate prefix"
+          report_step 1 "Destroy infrastructure (Terraform)" ok "Cloud Run, SA, WIF, AR gone; state cleaned"
 
       - name: Delete satellites (secret, Windmill app + vars, ticket card)
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/report.sh"
+          report_step 2 "Delete secrets" running
           gcloud secrets delete "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" --quiet 2>/dev/null \
             && echo "✓ secret deleted" || echo "::notice::no service secret"
+          report_step 2 "Delete secrets" ok
+          report_step 3 "Delete Windmill app + variables" running
           WMILL_TOKEN=$(gcloud secrets versions access latest --secret=hallotheo-wmill-token --project="$GCP_PROJECT")
-          for path in "apps/delete/p/f/${SNAKE}/app" "variables/delete/f/${SNAKE}/cloud_run_url" "variables/delete/f/${SNAKE}/frontend_service_secret"; do
-            curl -s -o /dev/null -X DELETE "${WMILL_BASE}/api/w/${WMILL_WORKSPACE}/${path}" \
+          # NOTE: the app delete path has NO /p/ prefix — with it, Windmill
+          # returns a LYING 200 against a phantom path (two ghost apps found).
+          for wpath in "apps/delete/f/${SNAKE}/app" "variables/delete/f/${SNAKE}/cloud_run_url" "variables/delete/f/${SNAKE}/frontend_service_secret"; do
+            curl -s -o /dev/null -X DELETE "${WMILL_BASE}/api/w/${WMILL_WORKSPACE}/${wpath}" \
               -H "Authorization: Bearer ${WMILL_TOKEN}"
           done
-          echo "✓ windmill app + variables deleted (if they existed)"
+          # never trust the 200 — verify absence
+          LEFT=$(curl -s "${WMILL_BASE}/api/w/${WMILL_WORKSPACE}/apps/list" -H "Authorization: Bearer ${WMILL_TOKEN}" \
+            | jq -r --arg p "f/${SNAKE}/app" '[.[] | select(.path == $p)] | length')
+          if [ "$LEFT" != "0" ]; then
+            report_step 3 "Delete Windmill app + variables" fail "app still listed after delete"
+            echo "::error::windmill app survived deletion"; exit 1
+          fi
+          echo "✓ windmill app + variables deleted and VERIFIED gone"
+          report_step 3 "Delete Windmill app + variables" ok "verified absent from apps/list"
+          report_step 4 "Trash ticket cards" running
           NOTION_KEY=$(gcloud secrets versions access latest --secret=sdlc-notion-api-key --project="$GCP_PROJECT")
           PAGES=$(curl -s -X POST "https://api.notion.com/v1/data_sources/${TICKETS_DATA_SOURCE_ID}/query" \
             -H "Authorization: Bearer $NOTION_KEY" -H "Notion-Version: 2025-09-03" -H "Content-Type: application/json" \
@@ -112,18 +147,22 @@ jobs:
               -H "Content-Type: application/json" -d '{"in_trash":true}'
           done
           echo "✓ ticket cards trashed: $(echo "$PAGES" | grep -c . || true)"
+          report_step 4 "Trash ticket cards" ok
 
       - name: Delete the GitHub repo (last)
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
+          source "$RUNNER_TEMP/report.sh"
+          report_step 5 "Delete repository" running
           if gh api "repos/hallo-theo/$SLUG" >/dev/null 2>&1; then
             gh api -X DELETE "repos/hallo-theo/$SLUG"
             echo "✓ repo deleted"
           else
             echo "::notice::repo already gone"
           fi
+          report_step 5 "Delete repository" ok "hallo-theo/$SLUG erased"
 
       - name: Report back to the front door
         run: |
@@ -132,3 +171,10 @@ jobs:
           curl -sf -X POST "$FD/api/queue/$SLUG/decommissioned" -H "X-Queue-Key: $QUEUE_KEY" >/dev/null \
             && echo "✓ submission marked decommissioned" \
             || echo "::warning::could not mark the submission — set it manually"
+
+      - name: Report teardown failure to the journey
+        if: failure()
+        run: |
+          source "$RUNNER_TEMP/report.sh" 2>/dev/null || exit 0
+          CUR=$(cat "$RUNNER_TEMP/current_step" 2>/dev/null || echo "1|Destroy infrastructure (Terraform)")
+          report_step "${CUR%%|*}" "${CUR##*|}" fail "teardown failed here — see the Decommission run in hallo-theo/.github Actions"
