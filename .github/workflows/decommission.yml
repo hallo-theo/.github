@@ -1,0 +1,128 @@
+# Decommission — the destroy button's engine. Tears down EVERYTHING an app
+# owns, in the order proven by the manual runbook (beschluss-radar,
+# onboard-e2e-test): infra first (terraform needs the repo's config), repo
+# last. Dispatched by the front-door API after an APPROVER typed the repo
+# name into the confirmation dialog — the payload here is ids-only and
+# shape-guarded; the human confirmation already happened server-side.
+#
+# Idempotent: every step tolerates already-deleted resources, so a re-run
+# finishes whatever a failed run left behind.
+
+name: Decommission
+
+on:
+  repository_dispatch:
+    types: [front-door-decommission]
+
+permissions:
+  contents: read
+  id-token: write # WIF
+
+concurrency:
+  group: decommission-${{ github.event.client_payload.slug }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: project-shepherd-494112
+  GCP_REGION: europe-west3
+  FD: https://front-door-api-757287535499.europe-west3.run.app
+  WMILL_BASE: https://windmill-server-cfvpf3ocvq-ey.a.run.app
+  WMILL_WORKSPACE: hallotheo
+  TICKETS_DATA_SOURCE_ID: 5c15bb1a-6a2c-4cc5-80f4-12fd31cf19ca
+
+jobs:
+  decommission:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Payload guard (fail closed)
+        env:
+          SLUG_IN: ${{ github.event.client_payload.slug }}
+          RID_IN: ${{ github.event.client_payload.request_id }}
+        run: |
+          set -euo pipefail
+          echo "$SLUG_IN" | grep -Eq '^[a-z][a-z0-9-]{0,22}$' \
+            || { echo "::error::slug fails shape guard"; exit 1; }
+          echo "$RID_IN" | grep -Eq '^[0-9a-f]{12}$' \
+            || { echo "::error::request_id fails shape guard"; exit 1; }
+          { echo "SLUG=$SLUG_IN"; echo "RID=$RID_IN"; echo "SNAKE=${SLUG_IN//-/_}"; } >> "$GITHUB_ENV"
+
+      - name: Authenticate to GCP (WIF → provisioner SA)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/757287535499/locations/global/workloadIdentityPools/github-pool/providers/sdlc-provisioner
+          service_account: provisioner@project-shepherd-494112.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Mint App token (theo-provisioner)
+        id: app
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.PROVISIONER_APP_ID }}
+          private-key: ${{ secrets.PROVISIONER_PRIVATE_KEY }}
+          owner: hallo-theo
+
+      - name: Terraform destroy (infra first — needs the repo's config)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/hallo-theo/$SLUG" >/dev/null 2>&1; then
+            git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/hallo-theo/${SLUG}.git" work
+            if [ -d work/terraform ]; then
+              cd work/terraform
+              terraform init -input=false >/dev/null
+              terraform destroy -auto-approve -input=false >/dev/null
+              echo "✓ terraform destroy"
+              cd ../..
+            else
+              echo "::notice::repo has no terraform/ — skipping destroy"
+            fi
+          else
+            echo "::notice::repo already gone — proceeding with satellite cleanup"
+          fi
+          gsutil -m rm -r "gs://${GCP_PROJECT}-tfstate/${SLUG}" 2>/dev/null \
+            && echo "✓ tfstate prefix removed" || echo "::notice::no tfstate prefix"
+
+      - name: Delete satellites (secret, Windmill app + vars, ticket card)
+        run: |
+          set -euo pipefail
+          gcloud secrets delete "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" --quiet 2>/dev/null \
+            && echo "✓ secret deleted" || echo "::notice::no service secret"
+          WMILL_TOKEN=$(gcloud secrets versions access latest --secret=hallotheo-wmill-token --project="$GCP_PROJECT")
+          for path in "apps/delete/p/f/${SNAKE}/app" "variables/delete/f/${SNAKE}/cloud_run_url" "variables/delete/f/${SNAKE}/frontend_service_secret"; do
+            curl -s -o /dev/null -X DELETE "${WMILL_BASE}/api/w/${WMILL_WORKSPACE}/${path}" \
+              -H "Authorization: Bearer ${WMILL_TOKEN}"
+          done
+          echo "✓ windmill app + variables deleted (if they existed)"
+          NOTION_KEY=$(gcloud secrets versions access latest --secret=sdlc-notion-api-key --project="$GCP_PROJECT")
+          PAGES=$(curl -s -X POST "https://api.notion.com/v1/data_sources/${TICKETS_DATA_SOURCE_ID}/query" \
+            -H "Authorization: Bearer $NOTION_KEY" -H "Notion-Version: 2025-09-03" -H "Content-Type: application/json" \
+            -d "{\"filter\":{\"property\":\"Request-ID\",\"rich_text\":{\"equals\":\"$RID\"}},\"page_size\":20}" \
+            | jq -r '.results[].id' 2>/dev/null || true)
+          for pid in $PAGES; do
+            curl -s -o /dev/null -X PATCH "https://api.notion.com/v1/pages/$pid" \
+              -H "Authorization: Bearer $NOTION_KEY" -H "Notion-Version: 2025-09-03" \
+              -H "Content-Type: application/json" -d '{"in_trash":true}'
+          done
+          echo "✓ ticket cards trashed: $(echo "$PAGES" | grep -c . || true)"
+
+      - name: Delete the GitHub repo (last)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/hallo-theo/$SLUG" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/hallo-theo/$SLUG"
+            echo "✓ repo deleted"
+          else
+            echo "::notice::repo already gone"
+          fi
+
+      - name: Report back to the front door
+        run: |
+          set -euo pipefail
+          QUEUE_KEY=$(gcloud secrets versions access latest --secret=front-door-queue-api-key --project="$GCP_PROJECT")
+          curl -sf -X POST "$FD/api/queue/$SLUG/decommissioned" -H "X-Queue-Key: $QUEUE_KEY" >/dev/null \
+            && echo "✓ submission marked decommissioned" \
+            || echo "::warning::could not mark the submission — set it manually"
