@@ -80,3 +80,12 @@ resource "google_secret_manager_secret_iam_member" "front_door_reads_app_key" {
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${local.project_number}-compute@developer.gserviceaccount.com"
 }
+
+# Cloud Run bootstrap deploys services that RUN AS the default compute SA —
+# deploying run-as-X requires actAs on X (run.admin alone is not enough;
+# found live: journey-e2e-demo step 3, googleapi 403 iam.serviceaccounts.actAs).
+resource "google_service_account_iam_member" "provisioner_actas_runtime" {
+  service_account_id = "projects/${local.project}/serviceAccounts/${local.project_number}-compute@developer.gserviceaccount.com"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.provisioner.email}"
+}
