@@ -54,6 +54,12 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # ubuntu-latest no longer ships terraform (removed from runner images
+      # 2025) — found live when journey-e2e-demo died with exit 127.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
       - name: Mint App token (theo-provisioner)
         id: app
         uses: actions/create-github-app-token@v1
