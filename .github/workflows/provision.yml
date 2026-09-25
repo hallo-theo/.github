@@ -171,16 +171,7 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           uv sync >/dev/null 2>&1
           (cd "app/${SLUG}.raw_app" && npm install --silent >/dev/null 2>&1)
-          git config user.name "theo-provisioner[bot]"
-          git config user.email "theo-provisioner[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "nothing new to commit (resume)"
-          else
-            git commit -q -m "Initialize $TITLE from front-door request $RID (headless provisioner)"
-            git push -q
-          fi
-          report_step 2 "Scaffold from template" ok "bootstrapped, intent + ORG.md committed"
+          report_step 2 "Scaffold from template" ok "scaffolded — push deferred until infra exists"
 
       - name: "Step 3 — terraform apply (newborn infra)"
         run: |
@@ -200,7 +191,22 @@ jobs:
           fi
           terraform apply -auto-approve -input=false >/dev/null
           echo "CLOUD_RUN_URL=$(terraform output -raw cloud_run_url)" >> "$GITHUB_ENV"
-          report_step 3 "Provision infrastructure (Terraform)" ok "deploy SA, WIF, AR, Cloud Run bootstrap"
+          # push ONLY NOW: the initial push triggers the repo's deploy, which
+          # authenticates via the WIF provider terraform just created. Pushing
+          # earlier = red run on every newborn (e2e find #4).
+          cd "$RUNNER_TEMP/app"
+          grep -qxF 'terraform/.terraform/' .gitignore 2>/dev/null || echo 'terraform/.terraform/' >> .gitignore
+          git config user.name "theo-provisioner[bot]"
+          git config user.email "theo-provisioner[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "nothing new to commit (resume)"
+          else
+            TITLE=$(jq -r .title "$RUNNER_TEMP/request.json")
+            git commit -q -m "Initialize $TITLE from front-door request $RID (headless provisioner)"
+            git push -q
+          fi
+          report_step 3 "Provision infrastructure (Terraform)" ok "infra live, initial commit pushed"
 
       - name: "Step 4 — Windmill variables + service secret"
         run: |
