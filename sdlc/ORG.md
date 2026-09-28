@@ -121,6 +121,17 @@ skill creates the first-slice card; the front-door API flips Status from its
 GitHub webhook. Humans watch the board — agents in CI never need Notion
 access.
 
+## Design standard — athena
+
+The org design system is **athena** (`hallo-theo/athena`): tokens, 37 UI
+components, design lint, assets, and 46 rule files (`design-system-md/`).
+Front-Door newborns are born with the athena tokens vendored
+(`app/*/src/athena-tokens.css`) and a `docs/DESIGN.md` stating the rules;
+UI is styled with the token custom properties and the org reviewer BLOCKS
+divergence. The full packages (`@hallo-theo/athena-ui`, `-lint`, `-assets`)
+are private GitHub Packages and not wired into the golden path yet — they
+land with the Cloud Run frontend stack. Never invent brand colors or type.
+
 ## Integrating with org systems
 
 The **integration catalog** — `sdlc/integrations/` in `hallo-theo/.github`

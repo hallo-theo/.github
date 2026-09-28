@@ -157,6 +157,41 @@ jobs:
           mkdir -p intent docs
           [ -f "intent/${SLUG}.md" ] || cp "$RUNNER_TEMP/intent.md" "intent/${SLUG}.md"
           [ -f docs/ORG.md ] || gh api repos/hallo-theo/.github/contents/sdlc/ORG.md -q .content | base64 -d > docs/ORG.md
+          # theo-wide design standard (athena, stage 1): the tokens ride into
+          # the newborn at birth; agents style with var(--...) from :root and
+          # the reviewer BLOCKS UI that ignores them. Full packages (ui/lint/
+          # assets) land with the Cloud Run stack. Non-fatal: a newborn
+          # without tokens is a warning, not a dead journey.
+          APPDIR="app/${SLUG}.raw_app"
+          if [ -d "$APPDIR/src" ] && [ ! -f "$APPDIR/src/athena-tokens.css" ]; then
+            gh api repos/hallo-theo/athena/contents/packages/tokens/index.css -q .content \
+              | base64 -d > "$APPDIR/src/athena-tokens.css" \
+              || { rm -f "$APPDIR/src/athena-tokens.css"; echo "::warning::athena tokens fetch failed — newborn born without design tokens"; }
+          fi
+          if [ ! -f docs/DESIGN.md ]; then
+            cat > docs/DESIGN.md <<'DESIGNMD'
+          # Design standard — athena
+
+          hallo theo's design system is **athena** (`hallo-theo/athena`).
+          This repo consumes it in stage-1 form:
+
+          - `app/*/src/athena-tokens.css` — the athena token file, vendored at
+            birth. Import it once in the app entry and style EVERYTHING with
+            its `:root` custom properties (`var(--...)`: colors, spacing,
+            radius, shadows, type scale). No hardcoded hex colors, px-soups,
+            or ad-hoc shadows. (The `@theme` blocks are Tailwind-v4 syntax
+            and inert here — the `:root` section is what applies.)
+          - The rules live in `design-system-md/` of `hallo-theo/athena`
+            (46 files: colors, typography, control heights, corner radius,
+            empty states, …). Consult the relevant file before building UI;
+            in CI, read it via `gh api repos/hallo-theo/athena/contents/...`.
+          - The org reviewer treats UI that diverges from the tokens/rules as
+            a BLOCKING finding.
+          - Component library (`@hallo-theo/athena-ui`), design lint and the
+            Klim fonts are NOT wired yet (private packages; Cloud Run stack
+            work) — do not add them ad hoc.
+          DESIGNMD
+          fi
           grep -q '## Origin' AGENTS.md && SKIP_ORIGIN=1 || SKIP_ORIGIN=0
           REQUESTER=$(jq -r .requester "$RUNNER_TEMP/request.json")
           AUD=$(jq -r .audience "$RUNNER_TEMP/request.json")
