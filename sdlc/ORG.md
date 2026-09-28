@@ -120,3 +120,13 @@ automation join key) and Blocked by / Blocks dependencies. The /front-door
 skill creates the first-slice card; the front-door API flips Status from its
 GitHub webhook. Humans watch the board — agents in CI never need Notion
 access.
+
+## Integrating with org systems
+
+The **integration catalog** — `sdlc/integrations/` in `hallo-theo/.github`
+(raw over the GitHub API works from CI) — is the only sanctioned way to
+touch an org system (master-data BigQuery, Notion, …): what each system is,
+how code integrates, and which entitlement it needs. The systems list
+declared on the Front-Door form and approved at Accept is the hard boundary:
+**agents never expand their own access** — an undeclared system need is a
+Risks/escalations entry for a human, never a workaround.
