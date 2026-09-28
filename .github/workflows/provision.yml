@@ -211,6 +211,30 @@ jobs:
               | sed -e "s/__PROJECT_SLUG__/$SLUG/g" -e "s/__GCP_PROJECT_NUMBER__/$GCP_PROJECT_NUMBER/g" \
                     -e "s/__GCP_PROJECT__/$GCP_PROJECT/g" -e "s/__GCP_REGION__/$GCP_REGION/g" > "terraform/$f"
           done
+          # Entitlements from the DECLARED systems list — the Accept click is
+          # the approval (catalog: sdlc/integrations/). They live in the
+          # newborn's own terraform so destroy removes them with the app, and
+          # they bind the PER-APP runtime SA — never a shared identity.
+          if jq -e '.systems | index("bigquery")' "$RUNNER_TEMP/request.json" >/dev/null \
+             && [ ! -f terraform/entitlements.tf ]; then
+            cat > terraform/entitlements.tf <<EOF
+          # Declared+Accepted entitlement: read the master-data warehouse.
+          # Catalog: hallo-theo/.github -> sdlc/integrations/bigquery-master-data.md
+          resource "google_bigquery_dataset_iam_member" "masterdata_viewer" {
+            project    = "hallotheo-443008"
+            dataset_id = "master_data"
+            role       = "roles/bigquery.dataViewer"
+            member     = "serviceAccount:\${google_service_account.runtime.email}"
+          }
+
+          resource "google_project_iam_member" "runtime_bq_jobuser" {
+            project = "$GCP_PROJECT"
+            role    = "roles/bigquery.jobUser"
+            member  = "serviceAccount:\${google_service_account.runtime.email}"
+          }
+          EOF
+            echo "entitlements.tf written (bigquery declared)"
+          fi
           # lock files must exist before the first commit (CI uses --frozen / npm ci)
           curl -LsSf https://astral.sh/uv/install.sh 2>/dev/null | sh >/dev/null 2>&1
           export PATH="$HOME/.local/bin:$PATH"
@@ -277,8 +301,11 @@ jobs:
           gcloud secrets describe "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" >/dev/null 2>&1 \
             || gcloud secrets create "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" --replication-policy=automatic >/dev/null
           printf '%s' "$FRONTEND_SERVICE_SECRET" | gcloud secrets versions add "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" --data-file=- >/dev/null
+          # the PER-APP runtime SA reads the secret — never the shared default
+          # compute SA (that grant was the old way; per-app SA landed with the
+          # plugins stack change, same day as this line)
           gcloud secrets add-iam-policy-binding "${SLUG}-frontend-service-secret" --project="$GCP_PROJECT" \
-            --member="serviceAccount:${GCP_PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+            --member="serviceAccount:${SLUG}-run@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --role=roles/secretmanager.secretAccessor >/dev/null
           gcloud run services update "${SLUG}-api" --region="$GCP_REGION" --project="$GCP_PROJECT" \
             --set-secrets="FRONTEND_SERVICE_SECRET=${SLUG}-frontend-service-secret:latest" >/dev/null

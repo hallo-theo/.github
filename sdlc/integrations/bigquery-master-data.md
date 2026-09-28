@@ -21,9 +21,10 @@ The app's runtime service account needs:
    `hallotheo-443008:master_data` (dataset-level, not project-level), and
 2. `roles/bigquery.jobUser` on the app's own project (to run query jobs).
 
-Grant path: the provisioner SA holds `roles/bigquery.dataOwner` on the
-dataset (platform `terraform/integrations.tf`), so once newborns have a
-per-app runtime SA the provisioner applies both grants automatically when
-`bigquery` was declared + Accepted. Until then: manual grant by the pitch
-owner, and ONLY for a per-app SA — never for the shared default compute SA
-(that would entitle every app at once).
+Grant path — **automatic**: when `bigquery` was declared on the form and
+Accepted, the provisioner writes `terraform/entitlements.tf` into the
+newborn (dataset `dataViewer` + project `jobUser` for the app's `<slug>-run`
+SA) and applies it at provision time; destroy removes it with the app. The
+provisioner can do this because it holds `roles/bigquery.dataOwner` on the
+dataset (platform `terraform/integrations.tf`). Never grant to the shared
+default compute SA — that would entitle every app at once.
