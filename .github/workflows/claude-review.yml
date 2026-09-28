@@ -105,8 +105,16 @@ jobs:
                the same PR does not update them, that is a BLOCKING finding:
                name the stale file and section. Docs and code move atomically.
                (No finding if the docs genuinely need no change.)
-            4. Post concrete review comments for anything real you find.
-            5. Submit EXACTLY ONE review, and do NOT merge:
+            4. Design standard (only when the repo carries docs/DESIGN.md and
+               the diff touches UI code): the org design system is athena.
+               New or changed UI must be styled with the vendored athena
+               tokens (var(--...) from athena-tokens.css) — hardcoded hex
+               colors, ad-hoc px sizing scales, or invented shadows/radii in
+               UI code are a BLOCKING finding; name the file and line and the
+               token that should be used (rules: design-system-md/ in
+               hallo-theo/athena). Repos without docs/DESIGN.md are exempt.
+            5. Post concrete review comments for anything real you find.
+            6. Submit EXACTLY ONE review, and do NOT merge:
                - No blocking issues → approve:
                  gh pr review ${{ github.event.pull_request.number }} --approve \
                    --body "Reviewed by Claude — no blocking issues. <summary>"
