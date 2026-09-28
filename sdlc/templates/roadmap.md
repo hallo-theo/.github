@@ -78,6 +78,9 @@ Hard limits, all enforced:
 - `acceptance_criteria` is non-empty; `blocked_by` may be empty but must
   only reference ids that exist in this file.
 - A wave-N ticket may only be blocked by tickets in waves < N.
+- Areas are disjoint **within** a wave (same-wave tickets run as parallel
+  workers; two workers in one area is a merge conflict). The same area in
+  different waves is fine — that is sequential work.
 - At most **12 tickets** per roadmap. If the idea needs more, the later work
   belongs to a follow-up roadmap after this one ships.
 - `[]` (zero tickets) is valid and means the first slice already delivers
