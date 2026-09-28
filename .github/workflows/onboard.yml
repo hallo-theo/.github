@@ -107,12 +107,38 @@ jobs:
 
           Org-wide platform and conventions: see `sdlc/ORG.md` in
           [hallo-theo/.github](https://github.com/hallo-theo/.github).
+          UI (if any) follows the athena design standard — see
+          `docs/DESIGN.md`; the org reviewer blocks divergence.
           MD
             ADDED="$ADDED AGENTS.md"
           fi
           if [ ! -f CLAUDE.md ]; then
             printf '@AGENTS.md\n' > CLAUDE.md
             ADDED="$ADDED CLAUDE.md"
+          fi
+          if [ ! -f docs/DESIGN.md ]; then
+            mkdir -p docs
+            cat > docs/DESIGN.md <<'MD'
+          # Design standard — athena
+
+          hallo theo's design system is **athena** (`hallo-theo/athena`).
+          If (or when) this repo has a UI, it follows athena — the org
+          reviewer BLOCKS UI that diverges. On the FIRST piece of UI work:
+
+          1. Vendor the tokens next to your frontend entry:
+             `gh api repos/hallo-theo/athena/contents/packages/tokens/index.css -q .content | base64 -d > <frontend-src>/athena-tokens.css`
+          2. Import that file once and style EVERYTHING with its `:root`
+             custom properties (`var(--...)`: colors, spacing, radius,
+             shadows, type scale). No hardcoded hex colors, px-soups or
+             invented shadows.
+          3. Consult the rules in `design-system-md/` of `hallo-theo/athena`
+             (46 files: colors, typography, control heights, …).
+
+          The component library (`@hallo-theo/athena-ui`), design lint and
+          fonts are private packages, not wired org-wide yet — do not add
+          them ad hoc. No UI in this repo → nothing to do.
+          MD
+            ADDED="$ADDED DESIGN.md"
           fi
           if [ ! -f .github/workflows/claude-review.yml ]; then
             mkdir -p .github/workflows
