@@ -3,8 +3,13 @@
 # front-door API), this pushes the standard kit and sets the `sdlc` custom
 # property so the org rulesets apply:
 #   kit: AGENTS.md skeleton + CLAUDE.md (@AGENTS.md) + theo-pr-reviewer stub
-#   property: sdlc=baseline (PR-only rules; graduates to `floor` when the
-#             repo wires gates-passed)
+#        + stub pr.yml (a gates-passed that blesses docs/config but FAILS the
+#        moment code files land — it refuses to be a hollow green; owners
+#        replace it with real CI then)
+#   property: sdlc=floor when the stub gate was installed (PR-only AND
+#             gates-passed required from birth); sdlc=baseline when the repo
+#             arrived with its own pr.yml (a foreign check name must not
+#             brick merges — graduate manually once gates-passed exists)
 # Front-door-born repos are skipped — they get the full kit from the template.
 # Idempotent: existing files are never overwritten; property only set if unset.
 
@@ -92,8 +97,11 @@ jobs:
           - Every rule in this file must stay true — the org reviewer BLOCKS
             any PR that changes behavior these docs describe without updating
             them in the same PR (docs and code move atomically).
-          - Merges happen only via PR (org ruleset `sdlc-baseline`). When this
-            repo wires a `gates-passed` check, graduate it to `sdlc=floor`.
+          - Merges happen only via PR, with a green `gates-passed` check (org
+            rulesets). The onboarding stub gate in .github/workflows/pr.yml
+            blesses docs/config but FAILS the moment code files land — replace
+            it with real CI (lint + tests exposing a green `gates-passed` job)
+            when that happens; snippets in hallo-theo/.github → sdlc/.
 
           ## Org context
 
@@ -133,6 +141,52 @@ jobs:
             sed -i 's/\$\[\[/$\x7b\x7b/g; s/\]\]/\x7d\x7d/g' .github/workflows/claude-review.yml
             ADDED="$ADDED claude-review.yml"
           fi
+          if [ ! -f .github/workflows/pr.yml ]; then
+            mkdir -p .github/workflows
+            cat > .github/workflows/pr.yml <<'YML'
+          # Stub gate pushed by the org onboarder (hallo-theo/.github
+          # onboard.yml). It runs real universal checks (workflow lint, secret
+          # scan) and blesses docs/config — but it REFUSES to bless code: the
+          # moment code files land in this repo the gate fails until you
+          # replace this file with real CI (lint + tests) exposing a green
+          # `gates-passed` job. Snippets: hallo-theo/.github -> sdlc/.
+          name: PR
+          on:
+            pull_request:
+              branches: [main]
+          jobs:
+            gates-passed:
+              runs-on: ubuntu-latest
+              timeout-minutes: 10
+              steps:
+                - uses: actions/checkout@v5
+                  with:
+                    fetch-depth: 0
+                - name: Lint workflows (actionlint)
+                  run: |
+                    bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.4 /tmp/al
+                    /tmp/al/actionlint -color
+                - name: Secret scan (gitleaks, full history)
+                  run: |
+                    curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+                      | tar -xz -C /tmp gitleaks
+                    /tmp/gitleaks git --no-banner --redact --exit-code 1 .
+                - name: Refuse to bless code without real CI
+                  run: |
+                    CODE=$(git ls-files | grep -Ev '^\.github/' \
+                      | grep -E '\.(py|ts|tsx|js|jsx|go|rs|java|kt|swift|c|cc|cpp)$' || true)
+                    if [ -n "$CODE" ]; then
+                      echo "$CODE" | head -20
+                      echo "::error::This repo contains code, but its gate is still the onboarding stub (no lint, no tests). Replace .github/workflows/pr.yml with real CI exposing a green gates-passed job — see hallo-theo/.github sdlc/README.md."
+                      exit 1
+                    fi
+                    echo "No code files — stub gate honestly green (docs/config only)."
+          YML
+            ADDED="$ADDED pr.yml"
+            # a required check now exists from birth -> the repo can start at
+            # floor (PR-only AND gates-passed) instead of baseline
+            echo "TIER=floor" >> "$GITHUB_ENV"
+          fi
           if [ -z "$ADDED" ]; then
             echo "::notice::kit already complete — only setting the property"
           else
@@ -147,12 +201,16 @@ jobs:
           fi
           echo "added:$ADDED"
 
-      - name: Set sdlc=baseline (activates the org ruleset)
+      - name: Set the sdlc property (activates the org rulesets)
         if: steps.gate.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -euo pipefail
+          # floor when the kit installed the stub gate (gates-passed exists
+          # from birth); baseline when the repo arrived with its own pr.yml —
+          # requiring a check name it may not expose would brick its merges.
+          TIER="${TIER:-baseline}"
           ph() {
             [ -z "${POSTHOG_SDLC_TOKEN:-}" ] && return 0
             jq -n --arg e "$1" --arg d "$2" --argjson x "${3:-{}}" \
@@ -161,9 +219,8 @@ jobs:
             | curl -s -o /dev/null -m 5 -X POST https://eu.i.posthog.com/capture/ \
                 -H 'Content-Type: application/json' -d @- || true
           }
-          ph sdlc_repo_onboarded "repo:$REPO" '{}'
-          gh api -X PATCH "repos/hallo-theo/$REPO/properties/values" \
-            --input - <<'JSON' && echo "✓ sdlc=baseline" \
+          ph sdlc_repo_onboarded "repo:$REPO" "{\"tier\": \"$TIER\"}"
+          jq -n --arg t "$TIER" '{properties: [{property_name: "sdlc", value: $t}]}' \
+            | gh api -X PATCH "repos/hallo-theo/$REPO/properties/values" --input - \
+            && echo "✓ sdlc=$TIER" \
             || echo "::warning::could not set the sdlc property (App may need org Custom-properties permission) — set it manually"
-          { "properties": [ { "property_name": "sdlc", "value": "baseline" } ] }
-          JSON
