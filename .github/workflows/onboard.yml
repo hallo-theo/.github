@@ -140,6 +140,27 @@ jobs:
           MD
             ADDED="$ADDED DESIGN.md"
           fi
+          if [ ! -f docs/PRODUCT.md ]; then
+            mkdir -p docs
+            cat > docs/PRODUCT.md <<'MD'
+          # Product context — binding for the product, not just the code
+
+          Ad-hoc repo: no front-door declaration, so the org defaults apply.
+          Edit this file if they are wrong for this repo — it stays binding.
+
+          - **UI language:** `de` — EVERY user-facing string ships in German
+            (Deutsch): labels, buttons, table headers, empty states, error
+            messages, and date/number formats to match. Code, comments,
+            tests, commits and docs stay English.
+          - **No dead controls:** when a planned feature turns out to have no
+            data source or backing system, REMOVE it from the UI and record
+            the cut — never ship a disabled filter, an always-empty column,
+            or a placeholder section.
+          - The org reviewer treats violations of this file as BLOCKING
+            findings on every UI-touching PR.
+          MD
+            ADDED="$ADDED PRODUCT.md"
+          fi
           if [ ! -f .github/workflows/claude-review.yml ]; then
             mkdir -p .github/workflows
             cat > .github/workflows/claude-review.yml <<'YML'
