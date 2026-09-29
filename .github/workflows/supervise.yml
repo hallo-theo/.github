@@ -166,7 +166,7 @@ jobs:
           show_full_output: true
           allowed_bots: "*"
           claude_args: |
-            --model claude-sonnet-5
+            --model claude-sonnet-5-5
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
             --disallowedTools "Task"
           prompt: |
