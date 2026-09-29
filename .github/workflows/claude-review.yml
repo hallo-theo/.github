@@ -113,8 +113,22 @@ jobs:
                UI code are a BLOCKING finding; name the file and line and the
                token that should be used (rules: design-system-md/ in
                hallo-theo/athena). Repos without docs/DESIGN.md are exempt.
-            5. Post concrete review comments for anything real you find.
-            6. Submit EXACTLY ONE review, and do NOT merge:
+            5. Product standard (only when the repo carries docs/PRODUCT.md
+               and the diff touches UI code) — read docs/PRODUCT.md first;
+               violations are BLOCKING findings:
+               a. Language: every user-facing string this diff adds or changes
+                  (labels, buttons, headers, empty states, error messages)
+                  must be in the UI language docs/PRODUCT.md declares. Code,
+                  comments, tests and docs stay English.
+               b. No dead controls: a control that can never do anything —
+                  a permanently disabled input, a filter over data that has
+                  no source, an always-empty column or section — must not
+                  ship. If the feature lost its data source, the diff must
+                  REMOVE it from the UI and record the cut in the plan's
+                  risks instead. "Honest but dead" UI is still a defect.
+               Repos without docs/PRODUCT.md are exempt.
+            6. Post concrete review comments for anything real you find.
+            7. Submit EXACTLY ONE review, and do NOT merge:
                - No blocking issues → approve:
                  gh pr review ${{ github.event.pull_request.number }} --approve \
                    --body "Reviewed by Claude — no blocking issues. <summary>"

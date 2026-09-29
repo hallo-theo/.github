@@ -19,6 +19,11 @@ Two files, one truth:
 **Intent:** <!-- intent/<slug>.md — link it; never copy requester text out of
 its fence. The PII rules from intent/ apply here too. -->
 
+**Product context:** <!-- docs/PRODUCT.md is binding: the UI language it
+declares applies to every user-facing string in every ticket, and its
+no-dead-controls rule applies to every plan change. Repeat the declared UI
+language here so no worker has to guess. -->
+
 ## Mission
 
 <!-- One paragraph in your own words: the outcome the app must deliver. -->
@@ -47,7 +52,14 @@ is carried by blocked_by, never by prose.
 ## Risks / escalations
 
 <!-- Anything likely to need a human: unclear intent, missing access to a
-declared system, domain decisions. Escalate — never self-grant access. -->
+declared system, domain decisions. Escalate — never self-grant access.
+
+SCOPE-CUT RULE: when a planned feature turns out to have no data source or
+backing system (a column that doesn't exist, a system that wasn't declared),
+the feature is CUT — removed from the UI and the tickets — and the cut is
+recorded here with what a future roadmap would need to bring it back. Never
+downgrade it to a disabled control or an always-empty column: "honest but
+dead" UI is a defect the reviewer blocks (docs/PRODUCT.md). -->
 
 ---
 

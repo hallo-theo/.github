@@ -193,6 +193,32 @@ jobs:
             work) — do not add them ad hoc.
           DESIGNMD
           fi
+          # Product context: declared at the front door, binding for every UI
+          # change (the reviewer enforces it). Old submissions without the
+          # field default to the org standard: German UI.
+          UI_LANG=$(jq -r '.ui_language // "de"' "$RUNNER_TEMP/request.json")
+          case "$UI_LANG" in
+            en) LANG_NAME="English" ;;
+            *)  UI_LANG="de"; LANG_NAME="German (Deutsch)" ;;
+          esac
+          AUD_P=$(jq -r .audience "$RUNNER_TEMP/request.json")
+          if [ ! -f docs/PRODUCT.md ]; then
+            cat > docs/PRODUCT.md <<PRODUCTMD
+          # Product context — binding for the product, not just the code
+
+          - **Audience:** ${AUD_P}
+          - **UI language:** \`${UI_LANG}\` — EVERY user-facing string ships in
+            ${LANG_NAME}: labels, buttons, table headers, empty states, error
+            messages, and date/number formats to match. Code, comments, tests,
+            commits and docs stay English.
+          - **No dead controls:** when a planned feature turns out to have no
+            data source or backing system, REMOVE it from the UI and record
+            the cut in the roadmap's risks — never ship a disabled filter, an
+            always-empty column, or a placeholder section.
+          - The org reviewer treats violations of this file as BLOCKING
+            findings on every UI-touching PR.
+          PRODUCTMD
+          fi
           grep -q '## Origin' AGENTS.md && SKIP_ORIGIN=1 || SKIP_ORIGIN=0
           REQUESTER=$(jq -r .requester "$RUNNER_TEMP/request.json")
           AUD=$(jq -r .audience "$RUNNER_TEMP/request.json")
