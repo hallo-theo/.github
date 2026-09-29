@@ -87,7 +87,8 @@ jobs:
           report_step() {  # report_step <index> <name> <running|ok|fail> [log]
             echo "$1|$2" > "$RUNNER_TEMP/current_step"
             jq -n --argjson i "$1" --arg n "$2" --arg s "$3" --arg l "${4:-}" \
-              '{index:$i, total:5, name:$n, status:$s, phase:"decommission", log:$l}' \
+              --arg u "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              '{index:$i, total:5, name:$n, status:$s, phase:"decommission", log:$l, run_url:$u}' \
             | curl -sf -X POST "$FD/api/queue/$SLUG/progress" \
                 -H "X-Queue-Key: $QUEUE_KEY" -H "Content-Type: application/json" \
                 -d @- >/dev/null || true
