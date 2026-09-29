@@ -81,9 +81,22 @@ resource "google_secret_manager_secret_iam_member" "front_door_reads_app_key" {
   member    = "serviceAccount:${local.project_number}-compute@developer.gserviceaccount.com"
 }
 
-# Cloud Run bootstrap deploys services that RUN AS the default compute SA —
-# deploying run-as-X requires actAs on X (run.admin alone is not enough;
-# found live: journey-e2e-demo step 3, googleapi 403 iam.serviceaccounts.actAs).
+# Deploying run-as-X requires actAs on X (run.admin alone is not enough;
+# found live TWICE: journey-e2e-demo step 3 against the default compute SA,
+# then portfolio-explorer step 3 against its per-app runtime SA the moment
+# per-app SAs landed). Newborn runtime SAs are created inside the same
+# terraform apply the provisioner runs, so a per-SA grant cannot exist in
+# advance — project-level actAs is the workable shape. The provisioner
+# already holds serviceAccountAdmin + projectIamAdmin here; this adds no
+# meaningful marginal authority.
+resource "google_project_iam_member" "provisioner_sa_user" {
+  project = local.project
+  role    = "roles/iam.serviceAccountUser"
+  member  = "serviceAccount:${google_service_account.provisioner.email}"
+}
+
+# Kept: the default compute SA binding predates per-app runtime SAs; apps
+# born before 2026-09-28 still run as it until migrated.
 resource "google_service_account_iam_member" "provisioner_actas_runtime" {
   service_account_id = "projects/${local.project}/serviceAccounts/${local.project_number}-compute@developer.gserviceaccount.com"
   role               = "roles/iam.serviceAccountUser"
