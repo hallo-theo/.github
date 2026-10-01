@@ -158,6 +158,33 @@ jobs:
             uv run pytest "${{ inputs.api-path }}/tests/" -v
           fi
 
+  # --- Prompt-surface drift check ---------------------------------------------
+  # Org contracts (docs/PRODUCT.md, docs/DESIGN.md, roadmap rules) only reach
+  # the agents through the prompts in the repo's workflows — a contract can
+  # silently stop being mentioned while every other check stays green. Repos
+  # that pin their prompt surface in sdlc/prompt-contracts.json get this job:
+  # it fails when a prompt-bearing file changes without the manifest moving in
+  # the same PR, or stops mentioning a listed contract. Repos without the
+  # manifest skip silently (success), so gates-passed is unaffected there.
+  # Single source of the check logic: scripts/check_prompt_surface.py in the
+  # repo itself (shipped by the app template, inherited by newborns).
+  prompt-surface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check prompt surface against sdlc/prompt-contracts.json
+        run: |
+          set -euo pipefail
+          if [ ! -f sdlc/prompt-contracts.json ]; then
+            echo "::notice::no sdlc/prompt-contracts.json — prompt-surface check does not apply here"
+            exit 0
+          fi
+          if [ ! -f scripts/check_prompt_surface.py ]; then
+            echo "::error::sdlc/prompt-contracts.json exists but scripts/check_prompt_surface.py is missing — the manifest has no enforcer"
+            exit 1
+          fi
+          python3 scripts/check_prompt_surface.py
+
   # --- Frontend (Vite + Vitest) ---------------------------------------------
   frontend:
     if: inputs.app-path != ''
