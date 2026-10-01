@@ -14,14 +14,23 @@ mirrors). Reference writers: `notion-workers` (sync workers),
 
 ## Entitlement
 
-Notion access is **manual by design** — there is no IAM to terraform:
+Notion access is **manual by design** — sharing pages has no IAM to
+terraform. The split since 2026-10-01:
 
-1. A workspace admin creates (or reuses) an internal integration token and
-   stores it in Secret Manager (`project-shepherd-494112`); the newborn's
-   Cloud Run service mounts it as an env var.
-2. A human must **share each required page/database with the integration**
-   in the Notion UI — this is the entitlement act, page by page. Unshared
-   pages are invisible to the token no matter what the code does.
+**Automated** (when `notion` is declared on the form and Accepted): the
+provisioner writes into the newborn's `terraform/entitlements.tf` an EMPTY
+Secret Manager secret `<slug>-notion-token` plus a `secretAccessor` grant
+for the app's own `<slug>-run` SA — so the secret lives and dies with the
+app, and only that app can read it.
+
+**Manual** (the actual entitlement act):
+
+1. A workspace admin creates a **new internal integration** for this app
+   (one integration per product lane — never a reused token) and adds its
+   token as a version of `<slug>-notion-token`.
+2. The admin **shares each required page/database with the integration**
+   in the Notion UI, page by page. Unshared pages are invisible to the
+   token no matter what the code does.
 
 The roadmap's integration ticket must therefore name the exact pages/DBs to
 share, and the journey escalates (`needs_human`) until sharing is confirmed.
