@@ -16,6 +16,8 @@ resource "google_service_account" "provisioner" {
 #   serviceAccountAdmin        → create the app's deploy SA
 #   projectIamAdmin            → grant the deploy SA its three project roles
 #   run.admin                  → bootstrap the Cloud Run service
+#   run.invoker                → the acceptance stage CALLS the deployed app
+#                                (admin manages but cannot invoke)
 #   artifactregistry.admin     → create the per-repo AR repo
 #   secretmanager.admin        → create <slug>-frontend-service-secret + bindings
 resource "google_project_iam_member" "provisioner_roles" {
@@ -24,6 +26,7 @@ resource "google_project_iam_member" "provisioner_roles" {
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
     "roles/run.admin",
+    "roles/run.invoker",
     "roles/artifactregistry.admin",
     "roles/secretmanager.admin",
   ])
