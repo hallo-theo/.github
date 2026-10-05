@@ -152,7 +152,11 @@ jobs:
           }
           {
             echo "path,status"
+            # Cloud Run's queue-proxy intercepts /healthz before the app sees
+            # it (found live on beschluss-radar) — probe both liveness paths;
+            # either one being 2xx means the service is alive.
             echo "/healthz,$(fetch /healthz healthz.txt)"
+            echo "/health,$(fetch /health health.txt)"
             echo "/openapi.json,$(fetch /openapi.json openapi.json)"
           } > "$RUNNER_TEMP/live/smoke.csv"
           # every parameterless GET from the spec, body samples truncated
@@ -229,7 +233,10 @@ jobs:
 
             Judge, in order of severity:
             1. BROKEN: any live endpoint non-2xx in smoke.csv, empty-but-
-               should-have-data responses, healthz failing.
+               should-have-data responses. Liveness: /health and /healthz are
+               alternatives — Cloud Run's queue-proxy intercepts /healthz, so
+               a 404 on one is fine when the other is 2xx; only BOTH failing
+               is a finding.
             2. PRODUCT STANDARD (PRODUCT.md is binding): user-facing strings
                in the frontend source in the wrong language; dead controls —
                permanently disabled inputs, filters over data with no source,
