@@ -262,35 +262,28 @@ jobs:
           EOF
             echo "entitlements.tf written (bigquery declared)"
           fi
-          # notion is manual-by-design (catalog: sdlc/integrations/notion.md):
-          # terraform owns the secret SHELL and the runtime SA's read grant; a
-          # workspace admin creates the integration, shares the exact pages,
-          # and fills the secret version by hand — that sharing IS the
-          # entitlement act, and the journey escalates until it happens.
+          # notion: the SDLC app lane shares ONE dedicated integration
+          # ("theo-sdlc-apps", catalog: sdlc/integrations/notion.md). The
+          # entitlement is a read grant on the shared platform secret; pages
+          # the app creates under the shared parent page inherit access, so
+          # no per-app sharing or token filling is needed. Org databases
+          # stay invisible unless an admin deliberately shares them.
           if jq -e '.systems | index("notion")' "$RUNNER_TEMP/request.json" >/dev/null \
-             && ! grep -q 'notion_token' terraform/entitlements.tf 2>/dev/null; then
+             && ! grep -q 'sdlc_apps_notion' terraform/entitlements.tf 2>/dev/null; then
             cat >> terraform/entitlements.tf <<NOTIONTF
-          # Declared+Accepted entitlement: notion (manual-by-design).
-          # Catalog: hallo-theo/.github -> sdlc/integrations/notion.md
-          # The secret is born EMPTY: a workspace admin fills it with the
-          # app's own integration token after sharing the pages. One
-          # integration per product lane — never a reused token.
-          resource "google_secret_manager_secret" "notion_token" {
+          # Declared+Accepted entitlement: notion via the SDLC-lane
+          # integration (theo-sdlc-apps). Catalog:
+          # hallo-theo/.github -> sdlc/integrations/notion.md
+          # Create this app's pages/databases UNDER the shared "SDLC Apps"
+          # parent page (id in the catalog) — children inherit access.
+          resource "google_secret_manager_secret_iam_member" "sdlc_apps_notion_reader" {
             project   = "$GCP_PROJECT"
-            secret_id = "${SLUG}-notion-token"
-            replication {
-              auto {}
-            }
-          }
-
-          resource "google_secret_manager_secret_iam_member" "notion_token_reader" {
-            project   = "$GCP_PROJECT"
-            secret_id = google_secret_manager_secret.notion_token.secret_id
+            secret_id = "sdlc-apps-notion-token"
             role      = "roles/secretmanager.secretAccessor"
             member    = "serviceAccount:\${google_service_account.runtime.email}"
           }
           NOTIONTF
-            echo "::notice::notion declared — secret shell ${SLUG}-notion-token + read grant provisioned; a workspace admin must create the integration, share the pages named in the roadmap, and add the secret version"
+            echo "::notice::notion declared — ${SLUG}-run granted read on the shared sdlc-apps-notion-token; app pages go under the shared SDLC Apps parent (catalog)"
           fi
           # lock files must exist before the first commit (CI uses --frozen / npm ci)
           curl -LsSf https://astral.sh/uv/install.sh 2>/dev/null | sh >/dev/null 2>&1

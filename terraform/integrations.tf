@@ -17,3 +17,20 @@ resource "google_bigquery_dataset_iam_member" "provisioner_masterdata_owner" {
   role       = "roles/bigquery.dataOwner"
   member     = "serviceAccount:${google_service_account.provisioner.email}"
 }
+
+# notion: ONE dedicated integration for the whole SDLC app lane
+# ("theo-sdlc-apps"). The token lives here as a platform secret; each
+# notion-declared newborn gets ONLY a secretAccessor grant on it (written
+# into the newborn's own entitlements.tf). Pages the apps create under the
+# shared "SDLC Apps" parent page inherit the integration's access, so no
+# per-app sharing is ever needed. Org databases stay invisible unless a
+# workspace admin deliberately shares them with this integration.
+# The secret VERSION (the token) is added by the workspace admin by hand —
+# terraform owns the shell only.
+resource "google_secret_manager_secret" "sdlc_apps_notion_token" {
+  project   = local.project
+  secret_id = "sdlc-apps-notion-token"
+  replication {
+    auto {}
+  }
+}
