@@ -28,8 +28,8 @@ with its own identity; nothing is mounted, nothing is copied.
 — children created via the API inherit the integration's access, so no
 per-app sharing is ever needed.
 
-- Parent page id: `TBD — workspace admin fills this in after the one-time
-  setup below.`
+- Parent page id: `3f0ac28a49f980b8ab28df0c192ac43e` ("SDLC Apps";
+  verified 2026-10-05: read + create + archive round-trip green).
 
 **One-time setup (workspace admin, once ever):**
 
