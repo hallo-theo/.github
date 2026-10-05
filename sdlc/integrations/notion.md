@@ -14,25 +14,38 @@ mirrors). Reference writers: `notion-workers` (sync workers),
 
 ## Entitlement
 
-Notion access is **manual by design** — sharing pages has no IAM to
-terraform. The split since 2026-10-01:
+The SDLC app lane shares **one dedicated integration**: `theo-sdlc-apps`.
+Its token lives in the platform secret `sdlc-apps-notion-token`
+(`project-shepherd-494112`; shell is terraform-owned in
+`terraform/integrations.tf`, the version is added by a workspace admin).
 
 **Automated** (when `notion` is declared on the form and Accepted): the
-provisioner writes into the newborn's `terraform/entitlements.tf` an EMPTY
-Secret Manager secret `<slug>-notion-token` plus a `secretAccessor` grant
-for the app's own `<slug>-run` SA — so the secret lives and dies with the
-app, and only that app can read it.
+newborn's `terraform/entitlements.tf` grants its own `<slug>-run` SA
+`secretAccessor` on that shared secret — the app reads the token at runtime
+with its own identity; nothing is mounted, nothing is copied.
 
-**Manual** (the actual entitlement act):
+**Where apps put their pages:** under the shared **"SDLC Apps" parent page**
+— children created via the API inherit the integration's access, so no
+per-app sharing is ever needed.
 
-1. A workspace admin creates a **new internal integration** for this app
-   (one integration per product lane — never a reused token) and adds its
-   token as a version of `<slug>-notion-token`.
-2. The admin **shares each required page/database with the integration**
-   in the Notion UI, page by page. Unshared pages are invisible to the
-   token no matter what the code does.
+- Parent page id: `TBD — workspace admin fills this in after the one-time
+  setup below.`
 
-The roadmap's integration ticket must therefore name the exact pages/DBs to
-share, and the journey escalates (`needs_human`) until sharing is confirmed.
-Never reuse another product's token scope-creep style — one integration per
-product lane (the Feedback-Hub-App lesson, applied to Notion).
+**One-time setup (workspace admin, once ever):**
+
+1. Create the internal integration `theo-sdlc-apps` in Notion.
+2. Create the parent page "SDLC Apps" and share it with that integration.
+3. Add the integration token as a version of `sdlc-apps-notion-token`.
+4. Replace the parent page id placeholder above (same PR discipline: docs
+   move with reality).
+
+**The boundary (read before sharing anything else):** every SDLC app holding
+this grant can read and write the whole "SDLC Apps" subtree — that shared
+blast radius is the deliberate trade for zero per-app ceremony, and it is
+acceptable because the subtree contains only platform-app data. Org
+databases (Objekte, Standort, Jahresabschluss, …) are NOT visible to this
+integration; a pitch that needs one is a Risks/escalations entry, and
+sharing that single database with `theo-sdlc-apps` is a deliberate,
+recorded human act — it entitles the WHOLE lane, so prefer modelling with
+plain id fields (e.g. store the warehouse `objectId` as text) over
+relations into org databases.
