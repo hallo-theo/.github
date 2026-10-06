@@ -1,0 +1,220 @@
+# Org agent registry — the single declared inventory of agents that act on
+# hallo theo's behalf, and the source of truth for LiteLLM teams and keys on
+# the gateway. sync.py reads this file; the gateway is made to match it.
+#
+# Rules:
+#   - Lanes are LiteLLM teams. Agents get virtual keys aliased "<lane>--<agent>".
+#   - The sync NEVER revokes or deletes anything. It creates and updates, and
+#     reports everything on the gateway that this file does not explain.
+#   - An agent that talks to an LLM through anything other than the gateway
+#     (direct Anthropic key, etc.) is listed with llm.via so the bypass is at
+#     least visible until it is migrated.
+#   - llm.mcp_access_groups: [master_data, impower, windmill, postamt] grants
+#     the agent's key access to gateway-registered MCP servers (one access
+#     group per server, named like the server). No agent has a grant yet —
+#     grants are added deliberately, per agent, in review.
+#   - skills: repo paths where the agent's harness skills (SKILL.md) live.
+#     Inventory only for now — skills are loaded by the agent's harness, not
+#     by the gateway (the gateway's /v1/skills is an Anthropic-hosted
+#     passthrough our Vertex-only deployment cannot use, verified live
+#     2026-10-06). These entries also seed the A2A agent-card skill list
+#     when agents get registered on the gateway's A2A registry.
+#
+# Seeded 2026-10-06 from the org inventory sweep: GitHub App installations
+# (gh api /orgs/hallo-theo/installations), Secret Manager LLM keys, and the
+# workflows in this repo. Extend it in the same PR that creates a new agent.
+
+gateway:
+  name: internal
+  base_url: https://llm-internal.theo.tools
+
+lanes:
+  sdlc:
+    description: Agents that build, review, provision, accept and heal software.
+    max_budget_usd_month: 300
+  products:
+    description: Agents embedded in shipped products, spending on behalf of product features.
+    max_budget_usd_month: 500
+  workspace:
+    description: Workspace/office agents that act for employees across org systems.
+    max_budget_usd_month: 300
+  employee-tools:
+    description: Third-party coding/work tools used by employees (formerly the cowork3p instance, decommissioned 2026-09/10).
+    max_budget_usd_month: 500
+
+agents:
+  # ── sdlc ────────────────────────────────────────────────────────────────
+  - name: builder
+    lane: sdlc
+    description: Authors code (first slices, swarm ticket workers, feature PRs).
+    identity:
+      github_app: theo-sdlc-agent
+      github_app_id: 4828249
+    llm:
+      via: gateway
+      today: shared org secret LITELLM_CI_AGENTS_KEY
+    skills:
+      - hallo-theo/hallotheo-claude-plugins (builder-tools plugin skills)
+      - per-repo .claude/skills loaded by the worker harness
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: reviewer
+    lane: sdlc
+    description: Reviews every PR, approves or requests changes, arms auto-merge.
+    identity:
+      github_app: theo-pr-reviewer
+      github_app_id: 4736835
+    llm:
+      via: gateway
+      today: org secret LITELLM_API_KEY
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: acceptance
+    lane: sdlc
+    description: Product UAT agent — smokes deployed apps, writes verdicts, files rework tickets.
+    identity:
+      github_app: theo-sdlc-agent
+      github_app_id: 4828249
+    llm:
+      via: gateway
+      today: shared org secret LITELLM_CI_AGENTS_KEY
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: supervisor
+    lane: sdlc
+    description: Watches journeys, diagnoses stalls, re-dispatches work.
+    identity:
+      github_app: theo-sdlc-agent
+      github_app_id: 4828249
+    llm:
+      via: gateway
+      today: shared org secret LITELLM_CI_AGENTS_KEY
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: healer
+    lane: sdlc
+    description: Repairs stuck agent PRs (conflicts, BEHIND branches) and re-arms them.
+    identity:
+      github_app: theo-sdlc-agent
+      github_app_id: 4828249
+    llm:
+      via: gateway
+      today: shared org secret LITELLM_CI_AGENTS_KEY
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: provisioner
+    lane: sdlc
+    description: Creates repos and infrastructure for newborn apps. No LLM spend.
+    identity:
+      github_app: theo-provisioner
+      github_app_id: 4939286
+      gcp_service_account: provisioner@project-shepherd-494112.iam.gserviceaccount.com
+    llm:
+      via: none
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: registry-sync
+    lane: sdlc
+    description: This registry's own sync identity — drives the LiteLLM management API through IAP. No LLM spend.
+    identity:
+      gcp_service_account: agent-registry-sync@project-shepherd-494112.iam.gserviceaccount.com
+    llm:
+      via: none
+    owner: ali.alkhateeb@hallotheo.de
+
+  # ── products ────────────────────────────────────────────────────────────
+  - name: feedback-hub
+    lane: products
+    description: AI triage of product feedback; opens fix PRs via the Claude PR loop.
+    identity:
+      github_app: feedback-hub-agent
+      github_app_id: 4673455
+    llm:
+      via: gateway
+      today: Secret Manager feedback-hub-litellm-api-key (project-shepherd-494112)
+    owner: ali.alkhateeb@hallotheo.de
+
+  - name: postamt
+    lane: products
+    description: Serienbriefe/Mahnungen/Mietabrechnungen document automation.
+    identity: {}
+    llm:
+      via: gateway
+      today: Secret Manager POSTAMT_LITELLM_API_KEY + POSTAMT_DEV_LITELLM_API_KEY (project-shepherd-494112)
+    owner: unknown — assign
+
+  - name: rechnungsbuchung
+    lane: products
+    description: Invoice booking agent in project-shepherd.
+    identity: {}
+    llm:
+      via: anthropic-direct # BYPASS: Secret Manager RECHNUNGSBUCHUNG_ANTHROPIC_API_KEY — no gateway spend tracking. Migrate.
+    owner: unknown — assign
+
+  - name: radio-tour
+    lane: products
+    description: Purpose unknown — GitHub App with broad permissions (contents, deployments, packages, pages) + direct Anthropic key.
+    identity:
+      github_app: radio-tour-agent
+      github_app_id: 4028275
+    llm:
+      via: anthropic-direct # BYPASS: Secret Manager RADIO_TOUR_ANTHROPIC_API_KEY. Identify owner, then migrate.
+    owner: unknown — INVESTIGATE
+
+  # ── workspace ───────────────────────────────────────────────────────────
+  - name: eve
+    lane: workspace
+    description: prosa-ai-chat workspace agent — HubSpot tickets/threads, hledger reconciliation, durable human requests.
+    identity: {}
+    llm:
+      via: gateway
+      today: key held in prosa-ai-chat's own runtime config
+    skills:
+      - hallo-theo/prosa-ai-chat agent/skills
+    owner: unknown — prosa-ai-chat owners
+
+  # ── employee-tools ──────────────────────────────────────────────────────
+  # cowork3p (the dedicated gateway instance for Cursor/Replit/Lovable) was
+  # decommissioned (llm-gateway PRs #25/#26/#28). The GitHub Apps cursor,
+  # replit and lovable-dev remain installed org-wide. Where their LLM spend
+  # goes today is UNKNOWN — re-point them at the internal gateway under this
+  # lane, or record the decision to leave them direct.
+  - name: cursor
+    lane: employee-tools
+    description: Cursor IDE org integration.
+    identity:
+      github_app: cursor
+      github_app_id: 1210556
+    llm:
+      via: unknown
+    owner: unknown — assign
+
+  - name: replit
+    lane: employee-tools
+    description: Replit org integration.
+    identity:
+      github_app: replit
+      github_app_id: 313035
+    llm:
+      via: unknown
+    owner: unknown — assign
+
+  - name: lovable
+    lane: employee-tools
+    description: Lovable org integration.
+    identity:
+      github_app: lovable-dev
+      github_app_id: 818760
+    llm:
+      via: unknown
+    owner: unknown — assign
+
+# Installed GitHub Apps that are NOT org agents (vendor integrations), listed
+# so the drift check can tell "known vendor" from "unexplained identity":
+# akiflow, dbt-cloud, fossa-integration, google-cloud-build, linear,
+# microsoft-teams-for-github, posthog-eu, vercel, windmill-sync-helper,
+# claude, claude-design-import, theo-tools-platform.
+#
+# UNEXPLAINED (flagged 2026-09, still installed 2026-10-06): coderabbitai —
+# a second AI reviewer with contents+members access nobody claims to have
+# installed. Identify who installed it or remove it.

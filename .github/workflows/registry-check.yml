@@ -1,0 +1,23 @@
+# Validates the agent registry on every PR that touches it. Offline only —
+# the actual gateway sync (sync.py --apply) is a deliberate human act.
+name: Agent registry check
+
+on:
+  pull_request:
+    paths:
+      - "sdlc/agents/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Validate agents.yaml
+        run: uv run sdlc/agents/sync.py --check
