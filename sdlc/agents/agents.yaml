@@ -30,16 +30,16 @@ gateway:
 
 lanes:
   sdlc:
-    description: Agents that build, review, provision, accept and heal software.
+    description: Agents that build, review, provision, accept and heal software — the AI-native SDLC conveyor, including feedback triage that feeds it.
     max_budget_usd_month: 300
-  products:
-    description: Agents embedded in shipped products, spending on behalf of product features.
+  domain-experts:
+    description: Agents defined by deep hallo-theo domain knowledge — Buchhaltung, Rechnungen, Verwaltung, DMS — doing the domain work inside shipped apps.
     max_budget_usd_month: 500
   workspace:
-    description: Workspace/office agents that act for employees across org systems.
+    description: Agents that act on an individual employee's behalf across org systems (tickets, mail, chat, reconciliation).
     max_budget_usd_month: 300
-  employee-tools:
-    description: Third-party coding/work tools used by employees (formerly the cowork3p instance, decommissioned 2026-09/10).
+  vendor-tools:
+    description: Third-party AI tools employees use (Cursor, Replit, Lovable) — not our agents, but their LLM spend is accounted here (formerly the cowork3p instance, decommissioned 2026-09/10).
     max_budget_usd_month: 500
 
 agents:
@@ -122,10 +122,9 @@ agents:
       via: none
     owner: ali.alkhateeb@hallotheo.de
 
-  # ── products ────────────────────────────────────────────────────────────
   - name: feedback-hub
-    lane: products
-    description: AI triage of product feedback; opens fix PRs via the Claude PR loop.
+    lane: sdlc
+    description: Triages product feedback and routes it into the build loop (fix PRs via the Claude PR loop) — lifecycle work, hence sdlc not domain-experts.
     identity:
       github_app: feedback-hub-agent
       github_app_id: 4673455
@@ -134,8 +133,9 @@ agents:
       today: Secret Manager feedback-hub-litellm-api-key (project-shepherd-494112)
     owner: ali.alkhateeb@hallotheo.de
 
+  # ── domain-experts ────────────────────────────────────────────────────────────
   - name: postamt
-    lane: products
+    lane: domain-experts
     description: Serienbriefe/Mahnungen/Mietabrechnungen document automation.
     identity: {}
     llm:
@@ -144,7 +144,7 @@ agents:
     owner: unknown — assign
 
   - name: rechnungsbuchung
-    lane: products
+    lane: domain-experts
     description: Invoice booking agent in project-shepherd.
     identity: {}
     llm:
@@ -152,7 +152,7 @@ agents:
     owner: unknown — assign
 
   - name: radio-tour
-    lane: products
+    lane: domain-experts
     description: Purpose unknown — GitHub App with broad permissions (contents, deployments, packages, pages) + direct Anthropic key.
     identity:
       github_app: radio-tour-agent
@@ -173,14 +173,14 @@ agents:
       - hallo-theo/prosa-ai-chat agent/skills
     owner: unknown — prosa-ai-chat owners
 
-  # ── employee-tools ──────────────────────────────────────────────────────
+  # ── vendor-tools ──────────────────────────────────────────────────────
   # cowork3p (the dedicated gateway instance for Cursor/Replit/Lovable) was
   # decommissioned (llm-gateway PRs #25/#26/#28). The GitHub Apps cursor,
   # replit and lovable-dev remain installed org-wide. Where their LLM spend
   # goes today is UNKNOWN — re-point them at the internal gateway under this
   # lane, or record the decision to leave them direct.
   - name: cursor
-    lane: employee-tools
+    lane: vendor-tools
     description: Cursor IDE org integration.
     identity:
       github_app: cursor
@@ -190,7 +190,7 @@ agents:
     owner: unknown — assign
 
   - name: replit
-    lane: employee-tools
+    lane: vendor-tools
     description: Replit org integration.
     identity:
       github_app: replit
@@ -200,7 +200,7 @@ agents:
     owner: unknown — assign
 
   - name: lovable
-    lane: employee-tools
+    lane: vendor-tools
     description: Lovable org integration.
     identity:
       github_app: lovable-dev
