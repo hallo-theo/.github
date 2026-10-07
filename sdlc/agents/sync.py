@@ -43,6 +43,7 @@ import requests
 import yaml
 
 REGISTRY = Path(__file__).parent / "agents.yaml"
+SKILLS = Path(__file__).parent / "skills.yaml"
 VALID_VIA = {"gateway", "anthropic-direct", "none", "unknown"}
 
 
@@ -85,6 +86,27 @@ def load_registry() -> dict:
             problems.append(f"agent {name}: owner missing")
     if problems:
         fail("agents.yaml invalid:\n  - " + "\n  - ".join(problems))
+    return data
+
+
+def load_skills() -> dict:
+    """skills.yaml — the SKILL.md bundles published to the gateway's skill hub."""
+    if not SKILLS.exists():
+        return {"source_repo": "", "skills": []}
+    data = yaml.safe_load(SKILLS.read_text()) or {}
+    problems = []
+    if not data.get("source_repo"):
+        problems.append("source_repo missing")
+    seen = set()
+    for s in data.get("skills") or []:
+        if not s.get("name") or not s.get("path"):
+            problems.append(f"skill entry needs name and path: {s}")
+            continue
+        if s["name"] in seen:
+            problems.append(f"duplicate skill {s['name']}")
+        seen.add(s["name"])
+    if problems:
+        fail("skills.yaml invalid:\n  - " + "\n  - ".join(problems))
     return data
 
 
@@ -154,6 +176,18 @@ class Gateway:
         rows = rows if isinstance(rows, list) else rows.get("agents", [])
         return {a["agent_name"]: a for a in rows if a.get("agent_name")}
 
+    def skills(self) -> dict[str, dict]:
+        """Skill hub = the Claude Code plugin marketplace behind the UI's Skills page."""
+        data = self._req("GET", "/claude-code/plugins")
+        return {p["name"]: p for p in data.get("plugins", []) if p.get("name")}
+
+    def create_skill(self, name: str, repo_url: str, path: str, description: str) -> None:
+        self._req("POST", "/claude-code/plugins", json={
+            "name": name,
+            "description": description,
+            "source": {"source": "git-subdir", "url": repo_url, "path": path},
+        })
+
     def create_agent(self, agent_name: str, card: dict) -> str:
         data = self._req("POST", "/v1/agents", json={
             "agent_name": agent_name, "agent_card_params": card})
@@ -216,7 +250,9 @@ def main() -> None:
     args = parser.parse_args()
 
     registry = load_registry()
+    skills = load_skills()
     print(f"agents.yaml valid: {len(registry['agents'])} agents, {len(registry['lanes'])} lanes")
+    print(f"skills.yaml valid: {len(skills.get('skills') or [])} skills")
     if args.check:
         return
 
@@ -271,10 +307,22 @@ def main() -> None:
         if args.apply:
             gw.create_agent(name, agent_card(agent))
 
+    # Skill hub: publish each declared SKILL.md bundle as a repo reference.
+    gw_skills = gw.skills()
+    for s in skills.get("skills") or []:
+        if s["name"] in gw_skills:
+            continue
+        plan_notes.append(f"CREATE skill {s['name']} ({s['path']})")
+        if args.apply:
+            gw.create_skill(s["name"], skills["source_repo"], s["path"],
+                            s.get("description", ""))
+
     drift += [f"gateway team not in registry: {t}" for t in teams if t not in registry["lanes"]]
     drift += [f"gateway key not in registry: {k}" for k in keys if k not in wanted_keys]
     registry_agent_names = {f"{a['lane']}--{a['name']}" for a in registry["agents"]}
     drift += [f"gateway agent not in registry: {n}" for n in gw_agents if n not in registry_agent_names]
+    declared_skills = {s["name"] for s in (skills.get("skills") or [])}
+    drift += [f"gateway skill not in registry: {n}" for n in gw_skills if n not in declared_skills]
     drift += [f"agent off-gateway (llm.via={a['llm']['via']}): {a['lane']}--{a['name']}"
               for a in registry["agents"] if a["llm"]["via"] in ("anthropic-direct", "unknown")]
 
