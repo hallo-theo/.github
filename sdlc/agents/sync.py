@@ -149,6 +149,46 @@ class Gateway:
         data = self._req("POST", "/key/generate", json=body)
         return data["key"]
 
+    def agents(self) -> dict[str, dict]:
+        rows = self._req("GET", "/v1/agents")
+        rows = rows if isinstance(rows, list) else rows.get("agents", [])
+        return {a["agent_name"]: a for a in rows if a.get("agent_name")}
+
+    def create_agent(self, agent_name: str, card: dict) -> str:
+        data = self._req("POST", "/v1/agents", json={
+            "agent_name": agent_name, "agent_card_params": card})
+        return data.get("agent_id", "")
+
+
+def _slug(text: str) -> str:
+    keep = [c.lower() if c.isalnum() else "-" for c in text]
+    return "".join(keep).strip("-")[:48] or "skill"
+
+
+def agent_card(agent: dict) -> dict:
+    """Build a minimal A2A agent card from a registry entry. No url — this is a
+    governance catalog entry, not a live endpoint. Card skills come from the
+    registry's skills inventory (repo paths), or a single capability skill
+    derived from the description when none are declared."""
+    skills = [
+        {"id": _slug(s), "name": s[:64], "description": s, "tags": [agent["lane"]]}
+        for s in agent.get("skills", [])
+    ] or [{
+        "id": _slug(agent["name"]),
+        "name": agent["name"],
+        "description": agent.get("description", agent["name"]),
+        "tags": [agent["lane"]],
+    }]
+    return {
+        "name": agent["name"],
+        "description": agent.get("description", agent["name"]),
+        "version": "1.0.0",
+        "capabilities": {},
+        "defaultInputModes": ["text"],
+        "defaultOutputModes": ["text"],
+        "skills": skills,
+    }
+
 
 def store_key(sm_project: str, alias: str, value: str) -> None:
     secret = f"llm-key-{alias}"
@@ -216,8 +256,25 @@ def main() -> None:
                 agent["llm"].get("mcp_access_groups", []))
             store_key(args.sm_project, alias, value)
 
+    # A2A agent catalog: register each of OUR agents (all lanes except
+    # vendor-tools, which are third-party tools, not agents we govern) as a
+    # url-less governance entry. The card is descriptive only — no live A2A
+    # endpoint yet; this is the central inventory the gateway UI shows.
+    gw_agents = gw.agents()
+    for agent in registry["agents"]:
+        if agent["lane"] == "vendor-tools":
+            continue
+        name = f"{agent['lane']}--{agent['name']}"
+        if name in gw_agents:
+            continue
+        plan_notes.append(f"CREATE agent {name} (catalog entry, no endpoint)")
+        if args.apply:
+            gw.create_agent(name, agent_card(agent))
+
     drift += [f"gateway team not in registry: {t}" for t in teams if t not in registry["lanes"]]
     drift += [f"gateway key not in registry: {k}" for k in keys if k not in wanted_keys]
+    registry_agent_names = {f"{a['lane']}--{a['name']}" for a in registry["agents"]}
+    drift += [f"gateway agent not in registry: {n}" for n in gw_agents if n not in registry_agent_names]
     drift += [f"agent off-gateway (llm.via={a['llm']['via']}): {a['lane']}--{a['name']}"
               for a in registry["agents"] if a["llm"]["via"] in ("anthropic-direct", "unknown")]
 
