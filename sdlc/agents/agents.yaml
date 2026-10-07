@@ -102,6 +102,16 @@ agents:
       today: shared org secret LITELLM_CI_AGENTS_KEY
     owner: ali.alkhateeb@hallotheo.de
 
+  - name: radio-tour
+    lane: sdlc
+    description: Repo-health monitoring agent (hallo-theo/radio-tour) — probes repos on a schedule and runs a Curator/Analyst/Resolver/Chat loop (Claude Agent SDK) that investigates failures and manages GitHub issues. Reliability/SDLC, overlaps supervisor+acceptance.
+    identity:
+      github_app: radio-tour-agent
+      github_app_id: 4028275
+    llm:
+      via: anthropic-direct # BYPASS: direct Anthropic via Claude Agent SDK (RADIO_TOUR_ANTHROPIC_API_KEY). Owned bypass, migrate for spend visibility.
+    owner: jan.nitschke@hallotheo.de  # + valentin.lorenzen@hallotheo.de
+
   - name: provisioner
     lane: sdlc
     description: Creates repos and infrastructure for newborn apps. No LLM spend.
@@ -150,16 +160,6 @@ agents:
     llm:
       via: anthropic-direct # BYPASS: Secret Manager RECHNUNGSBUCHUNG_ANTHROPIC_API_KEY — no gateway spend tracking. Migrate.
     owner: unknown — assign
-
-  - name: radio-tour
-    lane: domain-experts
-    description: Purpose unknown — GitHub App with broad permissions (contents, deployments, packages, pages) + direct Anthropic key.
-    identity:
-      github_app: radio-tour-agent
-      github_app_id: 4028275
-    llm:
-      via: anthropic-direct # BYPASS: Secret Manager RADIO_TOUR_ANTHROPIC_API_KEY. Identify owner, then migrate.
-    owner: unknown — INVESTIGATE
 
   # ── workspace ───────────────────────────────────────────────────────────
   - name: eve
