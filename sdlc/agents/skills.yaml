@@ -1,0 +1,45 @@
+# Org skill registry — the SKILL.md bundles published to the LiteLLM gateway's
+# skill hub (the Claude Code plugin marketplace behind the UI's Skills page).
+#
+# The hub stores a REFERENCE (repo + subdirectory), never a copy, so the repo
+# stays the single source of truth and the gateway stays an index. sync.py
+# registers these idempotently; it never deletes.
+#
+# Scope: the curated org-wide plugin repo. Repo-local .claude/skills stay with
+# their repo — they are app-specific and not org assets.
+
+source_repo: https://github.com/hallo-theo/hallotheo-claude-plugins
+
+skills:
+  - name: claude-vertex-windmill
+    path: plugins/builder-tools/skills/claude-vertex-windmill
+    description: "Running Claude on Google Vertex AI from inside a hallo theo Windmill Python script \u2014 both the raw `AnthropicVertex` client (simple LLM calls) and the Claude Agent SDK\u2026"
+
+  - name: domus-erp
+    path: plugins/builder-tools/skills/domus-erp
+    description: "DOMUS ERP accounting and property-management reference: SQL Server table semantics, FibuEbene/Fibu/Journal/JournalOPPos relationships, open-item settlement, bank imports, owner\u2026"
+
+  - name: front-door
+    path: plugins/builder-tools/skills/front-door
+    description: "Provision an ACCEPTED Front Door submission: /front-door <slug> fetches the frozen provisioning request from the Front Door queue and executes it with zero questions \u2014 repo\u2026"
+
+  - name: gcp-alerting
+    path: plugins/builder-tools/skills/gcp-alerting
+    description: "Set up production alerting for a hallo theo GCP app \u2014 Cloud Monitoring alert policies delivered into a Microsoft Teams channel via the channel's built-in email address (no\u2026"
+
+  - name: impower-api
+    path: plugins/builder-tools/skills/impower-api
+    description: Impower property management reference (Hausverwaltung)
+
+  - name: new-app
+    path: plugins/builder-tools/skills/new-app
+    description: Scaffolding a brand-new hallo theo internal app from scratch
+
+  - name: windmill-apps
+    path: plugins/builder-tools/skills/windmill-apps
+    description: "Building or modifying a hallo theo internal app on our self-hosted Windmill instance \u2014 scripts, flows, and raw_apps"
+
+  - name: windmill-to-cloudrun
+    path: plugins/builder-tools/skills/windmill-to-cloudrun
+    description: Migrating a hallo theo internal app OFF self-hosted Windmill onto Cloud Run behind IAP (Entra ID via a `hallotheo*` Workforce Identity Pool)
+
