@@ -197,7 +197,11 @@ jobs:
         env:
           ANTHROPIC_BASE_URL: https://llm-internal.theo.tools
         with:
-          anthropic_api_key: ${{ secrets.LITELLM_CI_AGENTS_KEY }}
+          # The acceptance agent's own gateway key (sdlc--acceptance), so its
+          # spend is attributable instead of pooled under the shared CI key.
+          # Falls back to the shared key so a missing/rotated secret degrades
+          # to the old behaviour rather than failing the run.
+          anthropic_api_key: ${{ secrets.LITELLM_KEY_SDLC_ACCEPTANCE || secrets.LITELLM_CI_AGENTS_KEY }}
           github_token: ${{ steps.app.outputs.token }}
           show_full_output: true
           allowed_bots: "*"
