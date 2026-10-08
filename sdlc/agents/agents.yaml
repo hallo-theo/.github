@@ -53,9 +53,28 @@ agents:
     llm:
       via: gateway
       today: shared org secret LITELLM_CI_AGENTS_KEY
+    # Hub skills this agent works from (names must exist in skills.yaml).
+    # builder-tools is its toolkit; athena is the design system every app UI
+    # must follow. Repo-local .claude/skills are loaded by the harness and are
+    # deliberately not listed here — only org-wide skills belong on the hub.
     skills:
-      - hallo-theo/hallotheo-claude-plugins (builder-tools plugin skills)
-      - per-repo .claude/skills loaded by the worker harness
+      - claude-vertex-windmill
+      - domus-erp
+      - front-door
+      - gcp-alerting
+      - impower-api
+      - new-app
+      - windmill-apps
+      - windmill-to-cloudrun
+      - athena-assets
+      - athena-code-style
+      - athena-components
+      - athena-contributing
+      - athena-lint
+      - athena-patterns
+      - athena-prompting
+      - athena-tokens
+      - design-system
     owner: ali.alkhateeb@hallotheo.de
 
   - name: reviewer
@@ -169,8 +188,29 @@ agents:
     llm:
       via: gateway
       today: key held in prosa-ai-chat's own runtime config
+    # The Verwaltung Fachwissen lives in eve's own repo — it is the agent that
+    # already reads these; publishing them made them reachable by others too.
     skills:
-      - hallo-theo/prosa-ai-chat agent/skills
+      - briefe
+      - buchhaltungstickets
+      - documents
+      - etv-einladung
+      - etv-protokoll
+      - hka
+      - impower
+      - mietbuchhaltung
+      - mietverwaltung
+      - mini-steckbrief
+      - objektuebersicht
+      - spicker-etv
+      - steckbrief
+      - theo-brand
+      - theo-operating-model
+      - verwalter-handbuch
+      - weg-finanzen
+      - weg-praxisfaelle
+      - weg-recht
+      - weg-versammlung-und-beschluesse
     owner: unknown — prosa-ai-chat owners
 
   # ── vendor-tools ──────────────────────────────────────────────────────
