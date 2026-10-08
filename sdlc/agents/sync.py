@@ -197,20 +197,28 @@ class Gateway:
             "agent_name": agent_name, "agent_card_params": card})
         return data.get("agent_id", "")
 
+    def update_agent_card(self, agent_id: str, card: dict) -> None:
+        self._req("PATCH", f"/v1/agents/{agent_id}", json={"agent_card_params": card})
+
 
 def _slug(text: str) -> str:
     keep = [c.lower() if c.isalnum() else "-" for c in text]
     return "".join(keep).strip("-")[:48] or "skill"
 
 
-def agent_card(agent: dict) -> dict:
-    """Build a minimal A2A agent card from a registry entry. No url — this is a
-    governance catalog entry, not a live endpoint. Card skills come from the
-    registry's skills inventory (repo paths), or a single capability skill
-    derived from the description when none are declared."""
+def agent_card(agent: dict, skill_index: dict[str, dict]) -> dict:
+    """Build an A2A agent card from a registry entry. No url — this is a
+    governance catalog entry, not a live endpoint. Card skills are the hub
+    skills the agent declares (skill_index carries their descriptions), or a
+    single capability skill derived from the description when none are."""
     skills = [
-        {"id": _slug(s), "name": s[:64], "description": s, "tags": [agent["lane"]]}
-        for s in agent.get("skills", [])
+        {
+            "id": _slug(name),
+            "name": name[:64],
+            "description": (skill_index.get(name, {}).get("description") or name),
+            "tags": [agent["lane"], skill_index.get(name, {}).get("repo", "").split("/")[-1]],
+        }
+        for name in agent.get("skills", [])
     ] or [{
         "id": _slug(agent["name"]),
         "name": agent["name"],
@@ -255,6 +263,14 @@ def main() -> None:
 
     registry = load_registry()
     skills = load_skills()
+    # Cross-reference: an agent may only claim skills this registry publishes,
+    # so the two files can never drift apart silently.
+    known = {s["name"] for s in (skills.get("skills") or [])}
+    unknown = sorted({(a["name"], sk) for a in registry["agents"]
+                      for sk in (a.get("skills") or []) if sk not in known})
+    if unknown:
+        fail("agents.yaml claims skills that skills.yaml does not publish:\n  - "
+             + "\n  - ".join(f"{a}: {s}" for a, s in unknown))
     # Every other gateway call still aborts the run — only per-skill creates are
     # tolerated (see the skill loop below).
     print(f"agents.yaml valid: {len(registry['agents'])} agents, {len(registry['lanes'])} lanes")
@@ -303,15 +319,25 @@ def main() -> None:
     # url-less governance entry. The card is descriptive only — no live A2A
     # endpoint yet; this is the central inventory the gateway UI shows.
     gw_agents = gw.agents()
+    skill_index = {s["name"]: s for s in (skills.get("skills") or [])}
     for agent in registry["agents"]:
         if agent["lane"] == "vendor-tools":
             continue
         name = f"{agent['lane']}--{agent['name']}"
-        if name in gw_agents:
+        card = agent_card(agent, skill_index)
+        existing = gw_agents.get(name)
+        if existing is None:
+            n = len(agent.get("skills") or [])
+            plan_notes.append(f"CREATE agent {name} ({n} skills, no endpoint)")
+            if args.apply:
+                gw.create_agent(name, card)
             continue
-        plan_notes.append(f"CREATE agent {name} (catalog entry, no endpoint)")
-        if args.apply:
-            gw.create_agent(name, agent_card(agent))
+        have = {s.get("name") for s in (existing.get("agent_card_params") or {}).get("skills", [])}
+        want = {s["name"] for s in card["skills"]}
+        if have != want:
+            plan_notes.append(f"UPDATE agent {name} skills {len(have)} -> {len(want)}")
+            if args.apply:
+                gw.update_agent_card(existing["agent_id"], card)
 
     # Skill hub: publish each declared SKILL.md bundle as a repo reference.
     gw_skills = gw.skills()
