@@ -47,6 +47,10 @@ SKILLS = Path(__file__).parent / "skills.yaml"
 VALID_VIA = {"gateway", "anthropic-direct", "none", "unknown"}
 
 
+class GatewayError(RuntimeError):
+    """A gateway call failed. Raised so a caller can decide: abort, or skip one item."""
+
+
 def fail(msg: str) -> None:
     print(f"ERROR: {msg}", file=sys.stderr)
     sys.exit(1)
@@ -135,7 +139,7 @@ class Gateway:
         resp = requests.request(method, f"{self.base}{path}",
                                 headers=self.headers, timeout=30, **kwargs)
         if resp.status_code >= 400:
-            fail(f"{method} {path} -> {resp.status_code}: {resp.text[:500]}")
+            raise GatewayError(f"{method} {path} -> {resp.status_code}: {resp.text[:300]}")
         return resp.json()
 
     def teams(self) -> dict[str, dict]:
@@ -251,6 +255,8 @@ def main() -> None:
 
     registry = load_registry()
     skills = load_skills()
+    # Every other gateway call still aborts the run — only per-skill creates are
+    # tolerated (see the skill loop below).
     print(f"agents.yaml valid: {len(registry['agents'])} agents, {len(registry['lanes'])} lanes")
     print(f"skills.yaml valid: {len(skills.get('skills') or [])} skills")
     if args.check:
@@ -314,8 +320,12 @@ def main() -> None:
             continue
         plan_notes.append(f"CREATE skill {s['name']} ({s['repo']}/{s['path']})")
         if args.apply:
-            gw.create_skill(s["name"], f"https://github.com/{s['repo']}", s["path"],
-                            s.get("description", ""))
+            # One unpublishable skill must not strand the rest: report and continue.
+            try:
+                gw.create_skill(s["name"], f"https://github.com/{s['repo']}", s["path"],
+                                s.get("description", ""))
+            except GatewayError as exc:
+                plan_notes[-1] += f"  !! FAILED: {exc}"
 
     drift += [f"gateway team not in registry: {t}" for t in teams if t not in registry["lanes"]]
     drift += [f"gateway key not in registry: {k}" for k in keys if k not in wanted_keys]
@@ -336,4 +346,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except GatewayError as exc:
+        fail(str(exc))

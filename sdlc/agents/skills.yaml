@@ -197,23 +197,15 @@ skills:
     path: skills/design-system
     description: "How to build UI with the hallo theo design system (Athena) — the four @hallo-theo/athena-* packages, the written rule per component, and what to do when the system lacks…"
 
-  # hallo-theo/project-shepherd — Domain + practice skills reusable beyond their repo.
-  - name: accounting-model
-    repo: hallo-theo/project-shepherd
-    path: .claude/skills/accounting-model
-    description: "How we build and review data models at hallo theo — the modelling contract for `etl/models` (staging / adapter / intermediate / marts)"
-  - name: pr-review
-    repo: hallo-theo/project-shepherd
-    path: .claude/skills/pr-review
-    description: "Review a pull request (or a local branch's diff) the way this team does it — point at a PR, get a severity-tiered, ground-truth-verified assessment that ends in a merge…"
-  - name: test-quality
-    repo: hallo-theo/project-shepherd
-    path: .claude/skills/test-quality
-    description: "Write tests that can actually fail, and audit existing tests for ones that can't"
-  - name: dbt-dev-cycle
-    repo: hallo-theo/project-shepherd
-    path: .claude/skills/dbt-dev-cycle
-    description: "Build, change, run, and test dbt models in a dev schema before shipping — the safe edit→run→verify loop for etl/models"
+  # hallo-theo/project-shepherd — NOT PUBLISHABLE AS-IS.
+  # accounting-model, pr-review, test-quality and dbt-dev-cycle are genuinely
+  # reusable, but they live under `.claude/skills/` and the hub rejects any
+  # path segment starting with a dot ("must be alphanumeric, dots, hyphens,
+  # underscores only" — a leading dot fails). Verified live 2026-10-08:
+  # single-segment and `a/b` paths register fine; `.claude/...` 400s.
+  # To publish them, the owning repo has to expose them at a non-dot path
+  # (e.g. a `skills/` dir, or mirrored into hallotheo-claude-plugins).
+  # Tracked as a follow-up with the project-shepherd owners.
 
   # hallo-theo/dataops-claude-skills — Data engineering.
   - name: data-engineer
