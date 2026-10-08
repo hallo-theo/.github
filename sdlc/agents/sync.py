@@ -92,16 +92,16 @@ def load_registry() -> dict:
 def load_skills() -> dict:
     """skills.yaml — the SKILL.md bundles published to the gateway's skill hub."""
     if not SKILLS.exists():
-        return {"source_repo": "", "skills": []}
+        return {"skills": []}
     data = yaml.safe_load(SKILLS.read_text()) or {}
     problems = []
-    if not data.get("source_repo"):
-        problems.append("source_repo missing")
     seen = set()
     for s in data.get("skills") or []:
-        if not s.get("name") or not s.get("path"):
-            problems.append(f"skill entry needs name and path: {s}")
+        if not s.get("name") or not s.get("path") or not s.get("repo"):
+            problems.append(f"skill entry needs name, repo and path: {s}")
             continue
+        if s["repo"].count("/") != 1 or s["repo"].startswith("http"):
+            problems.append(f"skill {s['name']}: repo must be owner/name, got {s['repo']!r}")
         if s["name"] in seen:
             problems.append(f"duplicate skill {s['name']}")
         seen.add(s["name"])
@@ -312,9 +312,9 @@ def main() -> None:
     for s in skills.get("skills") or []:
         if s["name"] in gw_skills:
             continue
-        plan_notes.append(f"CREATE skill {s['name']} ({s['path']})")
+        plan_notes.append(f"CREATE skill {s['name']} ({s['repo']}/{s['path']})")
         if args.apply:
-            gw.create_skill(s["name"], skills["source_repo"], s["path"],
+            gw.create_skill(s["name"], f"https://github.com/{s['repo']}", s["path"],
                             s.get("description", ""))
 
     drift += [f"gateway team not in registry: {t}" for t in teams if t not in registry["lanes"]]
