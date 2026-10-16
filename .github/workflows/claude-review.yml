@@ -51,6 +51,10 @@ on:
 
 jobs:
   review:
+    # Dependabot-triggered runs only receive Dependabot secrets, so
+    # PR_REVIEWER_PRIVATE_KEY arrives empty and the token step fails.
+    # A skipped job counts as passing for required checks.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
