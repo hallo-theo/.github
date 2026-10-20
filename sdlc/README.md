@@ -265,6 +265,11 @@ structurally excludes `.github/**`, so it cannot self-exempt.
 > application; the review-fix loop closes findings without a human. The
 > `feedback/*` and `.github/**` carve-outs are unchanged.
 
+A repo whose merges do not wait on the reviewer's verdict can keep it from
+approving at all: its `claude-review.yml` stub passes `approve: false`, and a
+review without blocking findings is then submitted as a comment. Changes
+requests are unaffected.
+
 > **Armer identity (pitch-owner decision, 2026-09-03):** auto-merge is armed
 > with a **theo-pr-reviewer App token**, never `github.token` — GitHub skips
 > workflow triggers for pushes caused by github-actions[bot], so
