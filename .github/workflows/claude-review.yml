@@ -31,6 +31,18 @@
 #         PR_REVIEWER_PRIVATE_KEY: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
 #         LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
 #
+# Optional input `approve` (default true). A repo that does not want the
+# reviewer's verdict to read as an approval passes `approve: false` in its
+# stub; a review with no blocking issue is then submitted as a COMMENT, and a
+# blocking one still as REQUEST CHANGES:
+#
+#       uses: hallo-theo/.github/.github/workflows/claude-review.yml@main
+#       with:
+#         approve: false
+#
+# Keep it true wherever an approval is what arms a merge (front-door/* agent
+# PRs through auto-merge-eligible.yml merge only after an APPROVED review).
+#
 # Org-level prerequisites (set once): org variable PR_REVIEWER_APP_ID,
 # org secrets PR_REVIEWER_PRIVATE_KEY + LITELLM_API_KEY, and the
 # theo-pr-reviewer App installed on the repo (contents: RW + pull
@@ -43,6 +55,11 @@ name: "Claude PR Review (reusable)"
 
 on:
   workflow_call:
+    inputs:
+      approve:
+        description: "Submit a clean review as APPROVE (true) or as COMMENT (false)."
+        type: boolean
+        default: true
     secrets:
       PR_REVIEWER_PRIVATE_KEY:
         required: true
@@ -133,8 +150,8 @@ jobs:
                Repos without docs/PRODUCT.md are exempt.
             6. Post concrete review comments for anything real you find.
             7. Submit EXACTLY ONE review, and do NOT merge:
-               - No blocking issues → approve:
-                 gh pr review ${{ github.event.pull_request.number }} --approve \
+               - No blocking issues → ${{ inputs.approve && 'approve' || 'comment, without approving' }}:
+                 gh pr review ${{ github.event.pull_request.number }} ${{ inputs.approve && '--approve' || '--comment' }} \
                    --body "Reviewed by Claude — no blocking issues. <summary>"
                - Any blocking issue (bug, regression, security, broken
                  build/tests) → request changes:
