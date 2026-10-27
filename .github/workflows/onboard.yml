@@ -211,6 +211,7 @@ jobs:
                     fetch-depth: 0
                 - name: Lint workflows (actionlint)
                   run: |
+                    mkdir -p /tmp/al
                     bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.4 /tmp/al
                     /tmp/al/actionlint -color
                 - name: Secret scan (gitleaks, full history)
