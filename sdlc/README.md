@@ -266,9 +266,12 @@ structurally excludes `.github/**`, so it cannot self-exempt.
 > `feedback/*` and `.github/**` carve-outs are unchanged.
 
 A repo whose merges do not wait on the reviewer's verdict can keep it from
-approving at all: its `claude-review.yml` stub passes `approve: false`, and a
-review without blocking findings is then submitted as a comment. Changes
-requests are unaffected.
+approving at all: its `claude-review.yml` stub passes `approve: false`, and
+the reviewer becomes advisory. Every review, clean or blocking, is submitted
+as a comment, never a changes-request: a reviewer that may not approve could
+otherwise block a PR it can never unblock. The verdict is the review job's
+check instead (red on blocking findings, green on a clean re-review of a
+later commit), which the repo can make required.
 
 > **Armer identity (pitch-owner decision, 2026-09-03):** auto-merge is armed
 > with a **theo-pr-reviewer App token**, never `github.token` — GitHub skips
