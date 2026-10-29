@@ -315,6 +315,8 @@ echo -n "<NEW_TOKEN_VALUE>" | gcloud secrets versions add hallotheo-wmill-token 
 | `dockerfile`     | `""`     | Path to Dockerfile. Empty = skip docker build sanity job. |
 | `docker-context` | `"."`    | Build context for the docker sanity check. |
 
+**Private `@hallo-theo/*` packages (athena) in the frontend:** the `npm install` step passes the run's token as `NODE_AUTH_TOKEN`, which the app's `.npmrc` reads (`//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}`). Two things on the caller side: give the `ci` job `permissions: { contents: read, packages: read }`, and grant the repo read access on each package (package settings → *Manage Actions access*). Without them `npm install` fails with E401.
+
 ### `python-ts-deploy.yml`
 
 | Input | Required | Notes |
