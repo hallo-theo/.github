@@ -210,7 +210,15 @@ jobs:
       # runtime is not a reliable workaround. `npm install` respects the
       # lock file when present and gracefully skips platform-incompatible
       # optional deps, which is what we want here.
+      #
+      # NODE_AUTH_TOKEN serves private @hallo-theo/* packages (athena) from
+      # GitHub Packages via the repo's .npmrc. The caller's ci job needs
+      # `permissions: packages: read`, and each package must grant the repo
+      # read access (package settings -> Manage Actions access). Repos
+      # without such an .npmrc never read it.
       - run: npm install --no-audit --prefer-offline
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Vitest
